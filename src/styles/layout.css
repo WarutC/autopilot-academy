@@ -106,3 +106,37 @@ body {
   position: relative;
   z-index: 1;
 }
+
+/* The scene and the banner over it. */
+.stage {
+  position: relative;
+}
+
+/* The live region covers the scene; it is never hidden, so changes are announced. */
+.banner-region {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.banner {
+  box-sizing: border-box;
+  max-width: min(86%, 420px);
+  padding: 12px 24px;
+  background: rgba(19, 41, 75, 0.82);
+  color: #ffffff;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.banner-title {
+  margin: 0;
+  font: var(--type-heading);
+}
+
+.banner-body {
+  margin: 4px 0 0;
+  font: var(--type-body);
+}

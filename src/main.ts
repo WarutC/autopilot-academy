@@ -2,9 +2,10 @@ import './styles/tokens.css'
 import './styles/layout.css'
 import { defaultParams, findAlgorithm } from './algorithms/index.ts'
 import { draw as drawScene } from './render/scene.ts'
-import { createRun } from './sim/run.ts'
+import { createRun, type Run, type RunPlayer } from './sim/run.ts'
 import type { Snapshot } from './sim/types.ts'
-import { createFlight } from './ui/flight.ts'
+import { bannerContent, createBanner } from './ui/banner.ts'
+import { createFlight, type Phase } from './ui/flight.ts'
 import { createScoreMirror } from './ui/score-mirror.ts'
 import { loadTheme, watchTheme } from './ui/theme.ts'
 import { createToolbar } from './ui/toolbar.ts'
@@ -13,14 +14,18 @@ const canvas = document.createElement('canvas')
 canvas.className = 'scene'
 canvas.setAttribute('role', 'img')
 canvas.setAttribute('aria-label', 'Flight scene')
+const banner = createBanner(document)
+const stage = document.createElement('div')
+stage.className = 'stage'
+stage.append(canvas, banner.element)
 const app = document.querySelector('#app')!
-app.append(canvas)
+app.append(stage)
 const ctx = canvas.getContext('2d')!
 
 const pid = findAlgorithm('pid')!
-const flight = createFlight(() =>
-  createRun({ course: 101, mode: 'autopilot', player: { algorithm: pid, params: defaultParams(pid) } }),
-)
+/** The player's autopilot; each Fly starts a run with the current one. */
+let player: RunPlayer = { algorithm: pid, params: defaultParams(pid) }
+const flight = createFlight(() => createRun({ course: 101, mode: 'autopilot', player }))
 
 const toolbar = createToolbar(document, {
   fly() {
@@ -54,8 +59,17 @@ function requestDraw(): void {
   needsDraw = true
 }
 
+let bannerPhase: Phase | undefined
+let bannerRun: Run | undefined
+
 function syncToolbar(): void {
   toolbar.update(flight.phase, flight.speed)
+  // The banner depends only on the phase and the run's result, so recompute it when either changes.
+  if (flight.phase !== bannerPhase || flight.run !== bannerRun) {
+    bannerPhase = flight.phase
+    bannerRun = flight.run
+    banner.update(bannerContent(flight.phase, flight.run.result('player')))
+  }
 }
 
 function draw(): void {
@@ -99,6 +113,8 @@ function watchPixelRatio(): void {
 }
 
 async function start(): Promise<void> {
+  // Show the Ready banner now; the dev-only imports below may take a moment.
+  syncToolbar()
   const query = new URLSearchParams(location.search)
   if (import.meta.env.DEV && query.has('fixture')) {
     const { FIXTURE_ID, fixtureSnapshot } = await import('./render/fixture.ts')
@@ -108,6 +124,10 @@ async function start(): Promise<void> {
       fixture = fixtureSnapshot(flown ? Number(flown) : undefined)
       canvas.dataset.fixture = FIXTURE_ID
     }
+  }
+  if (import.meta.env.DEV && query.get('controller') === 'dive') {
+    const { DIVE } = await import('./ui/dive.ts')
+    player = { algorithm: DIVE, params: {} }
   }
   watchTheme(() => {
     theme = loadTheme()
