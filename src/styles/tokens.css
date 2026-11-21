@@ -1,0 +1,99 @@
+@font-face {
+  font-family: 'Barlow';
+  src: url('/fonts/Barlow-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Barlow';
+  src: url('/fonts/Barlow-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Barlow';
+  src: url('/fonts/Barlow-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Barlow';
+  src: url('/fonts/Barlow-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Barlow Condensed';
+  src: url('/fonts/BarlowCondensed-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Barlow Condensed';
+  src: url('/fonts/BarlowCondensed-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light dark;
+
+  --bg: #E7EEF5;
+  --ink: #13294B;
+  --muted: #4C617D;
+  --panel: #FFFFFF;
+  --line: #C5D3E1;
+  --strong: #13294B;
+  --tab: #F5B700;
+  --tab-ink: #13294B;
+  --field: #F1F5F9;
+  --accent: #D7262E;
+  --ghost: #2F6BFF;
+  --ok: #1C8A4A;
+  --amber: #D98200;
+  --refline: #13294B;
+  --chip-on: #13294B;
+  --chip-on-ink: #FFFFFF;
+  --focus: #F5B700;
+
+  --font-condensed: 'Barlow Condensed', 'Arial Narrow', Barlow, sans-serif;
+  --font-body: Barlow, 'Segoe UI', system-ui, sans-serif;
+
+  --type-title: 700 32px/1 var(--font-condensed);
+  --type-heading: 700 22px/1.2 var(--font-condensed);
+  --type-control: 600 20px/1.2 var(--font-condensed);
+  --type-score: 700 32px/1 var(--font-condensed);
+  --type-body: 400 18px/1.5 var(--font-body);
+  --type-label: 500 18px/1.4 var(--font-body);
+  --type-number: 500 18px/1.4 var(--font-body);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0D1828;
+    --ink: #E4ECF6;
+    --muted: #9AAEC6;
+    --panel: #14223A;
+    --line: #2A3E5A;
+    --strong: #4C6688;
+    --field: #1A2C48;
+    --accent: #FF5960;
+    --ghost: #7BA2FF;
+    --ok: #4CC27D;
+    --amber: #F5B700;
+    --refline: #E4ECF6;
+    --chip-on: #F5B700;
+    --chip-on-ink: #13294B;
+  }
+}

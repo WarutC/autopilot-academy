@@ -1,0 +1,19 @@
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: var(--type-body);
+}
+
+#app {
+  padding: 16px;
+}
+
+.scene {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 2px solid var(--strong);
+  border-radius: 12px;
+}
