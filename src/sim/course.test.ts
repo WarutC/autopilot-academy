@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { makeCourse, refAt } from './course.ts'
+import { makeCourse, refAt, ringBounds } from './course.ts'
 import { PLANT } from './plant.ts'
 
 describe('makeCourse', () => {
@@ -52,5 +52,18 @@ describe('refAt', () => {
       if (i > 0) expect(refAt(course, boundary - 0.001)).toBe(course.rings[i - 1].h)
     })
     expect(refAt(course, course.endX + 1000)).toBe(course.rings[9].h)
+  })
+})
+
+describe('ringBounds', () => {
+  it('equals the bounds makeCourse returns', () => {
+    for (const n of [1, 101, 4242]) {
+      const course = makeCourse(n)
+      expect(ringBounds(course.rings)).toEqual(course.bounds)
+    }
+  })
+
+  it('is empty for no rings', () => {
+    expect(ringBounds([])).toEqual([])
   })
 })
