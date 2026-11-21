@@ -71,6 +71,19 @@ describe('Run with PID on course 101', () => {
     expect(s.course).toBe(101)
   })
 
+  it('types the trace columns against index writes (checked by tsc)', () => {
+    const run = pidRun()
+    run.step(8)
+    const tr = run.snapshot().trace.player!
+    // Never called: the typecheck fails if this write stops being an error.
+    const _write = () => {
+      // @ts-expect-error snapshot trace columns are the run's live buffers
+      tr.h[0] = 0
+    }
+    void _write
+    expect(tr.length).toBe(2)
+  })
+
   it('gives identical results however the steps are batched', () => {
     const runs = [1, 2, 4].map((n) => {
       const run = pidRun()

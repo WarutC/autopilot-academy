@@ -4,7 +4,8 @@
 import { makeCourse, refAt } from '../sim/course.ts'
 import { PLANT } from '../sim/plant.ts'
 import { ringResult } from '../sim/scoring.ts'
-import type { RingResult, Snapshot, Trace } from '../sim/types.ts'
+import { createTrace } from '../sim/trace.ts'
+import type { RingResult, Snapshot } from '../sim/types.ts'
 
 export const FIXTURE_ID = 'scene-fixture'
 
@@ -46,15 +47,8 @@ export function fixtureSnapshot(flown: number = FIXTURE_FLOWN): Snapshot {
   }
 
   const rows = Math.floor(x / PLANT.speed / PLANT.Tc) + 1
-  const trace: Trace = {
-    length: rows,
-    t: new Float64Array(rows),
-    ref: new Float64Array(rows),
-    h: new Float64Array(rows),
-    hMeas: new Float64Array(rows),
-    hEst: new Float64Array(rows),
-    u: new Float64Array(rows),
-  }
+  const trace = createTrace(rows)
+  trace.length = rows
   for (let i = 0; i < rows; i++) {
     const t = i * PLANT.Tc
     const h = altitude(PLANT.speed * t)

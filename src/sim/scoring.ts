@@ -3,7 +3,7 @@
 import { PLANT } from './plant.ts'
 import type { PlaneId, PlaneStatus, Ring, RingResult } from './types.ts'
 
-/** How a plane is flown. Same strings as an algorithm module's modes. */
+/** How a plane is flown; algorithm modules list their modes with this union. */
 export type FlightMode = 'manual' | 'semi-auto' | 'autopilot'
 
 /** One logbook row for one plane. */

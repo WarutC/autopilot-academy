@@ -51,17 +51,25 @@ export interface RingResult {
 }
 
 /**
+ * One trace column as consumers see it. Index writes are type errors; methods
+ * such as `fill`, `set` or `subarray` are not blocked, so never call them on a
+ * snapshot's trace.
+ */
+export type TraceColumn = Readonly<Float64Array>
+
+/**
  * Recorder history for one plane, one row per control tick. Columns are
- * preallocated; only the first `length` entries are valid.
+ * preallocated; only the first `length` entries are valid. They are the run's
+ * own buffers, not copies; consumers must not write to them.
  */
 export interface Trace {
   readonly length: number
-  readonly t: Float64Array
-  readonly ref: Float64Array
-  readonly h: Float64Array
-  readonly hMeas: Float64Array
-  readonly hEst: Float64Array
-  readonly u: Float64Array
+  readonly t: TraceColumn
+  readonly ref: TraceColumn
+  readonly h: TraceColumn
+  readonly hMeas: TraceColumn
+  readonly hEst: TraceColumn
+  readonly u: TraceColumn
 }
 
 export interface PlaneSnapshot {

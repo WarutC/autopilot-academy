@@ -4,6 +4,7 @@ import pid from '../algorithms/pid.ts'
 import { makeCourse, refAt } from '../sim/course.ts'
 import { PLANT } from '../sim/plant.ts'
 import { createRun } from '../sim/run.ts'
+import type { TraceBuffer } from '../sim/trace.ts'
 import type { PlaneSnapshot, RingResult, Snapshot, Trace } from '../sim/types.ts'
 import { fixtureSnapshot } from './fixture.ts'
 import { FONT, LINE, altitudeY, sceneGeometry, scoreLabel, type SceneSize } from './scene-geometry.ts'
@@ -47,7 +48,7 @@ function snapshotWith(p: PlaneSnapshot | null, trace?: Trace): Snapshot {
   }
 }
 
-function traceOf(rows: Array<readonly [t: number, h: number]>, capacity = rows.length + 5): Trace {
+function traceOf(rows: Array<readonly [t: number, h: number]>, capacity = rows.length + 5): TraceBuffer {
   const col = () => new Float64Array(capacity)
   const tr = { length: rows.length, t: col(), ref: col(), h: col(), hMeas: col(), hEst: col(), u: col() }
   rows.forEach(([t, h], i) => {

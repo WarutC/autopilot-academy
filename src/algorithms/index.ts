@@ -3,9 +3,11 @@
 // `AlgorithmModule`; the registry finds them, so adding a lesson needs no
 // change anywhere else.
 
+import type { FlightMode } from '../sim/scoring.ts'
 import type { Controller } from '../sim/types.ts'
 
-export type AlgorithmMode = 'manual' | 'semi-auto' | 'autopilot'
+/** How an algorithm can fly a plane; the same union the run and the logbook use. */
+export type AlgorithmMode = FlightMode
 
 /** One tunable parameter, shown as a slider or, with `toggle`, a switch. */
 export interface ParamSpec {

@@ -32,20 +32,19 @@ const toolbar = createToolbar(document, {
     flight.fly()
     delete canvas.dataset.fixture
     fixture = undefined
-    syncToolbar()
+    syncUi()
     requestDraw()
   },
   togglePause() {
     flight.togglePause()
-    syncToolbar()
+    syncUi()
   },
   setSpeed(speed) {
     flight.setSpeed(speed)
-    syncToolbar()
+    syncUi()
   },
 })
 app.append(toolbar.element)
-toolbar.update(flight.phase, flight.speed)
 
 const mirror = createScoreMirror(document)
 app.append(mirror.element)
@@ -62,7 +61,8 @@ function requestDraw(): void {
 let bannerPhase: Phase | undefined
 let bannerRun: Run | undefined
 
-function syncToolbar(): void {
+/** Reflects the flight into the toolbar and the banner; cheap, so it runs every frame. */
+function syncUi(): void {
   toolbar.update(flight.phase, flight.speed)
   // The banner depends only on the phase and the run's result, so recompute it when either changes.
   if (flight.phase !== bannerPhase || flight.run !== bannerRun) {
@@ -92,7 +92,7 @@ function frame(time: number): void {
   const elapsed = lastTime === undefined ? 0 : (time - lastTime) / 1000
   lastTime = time
   const stepped = flight.advance(elapsed) > 0
-  syncToolbar()
+  syncUi()
   if (stepped || needsDraw) {
     needsDraw = false
     draw()
@@ -114,7 +114,7 @@ function watchPixelRatio(): void {
 
 async function start(): Promise<void> {
   // Show the Ready banner now; the dev-only imports below may take a moment.
-  syncToolbar()
+  syncUi()
   const query = new URLSearchParams(location.search)
   if (import.meta.env.DEV && query.has('fixture')) {
     const { FIXTURE_ID, fixtureSnapshot } = await import('./render/fixture.ts')
@@ -138,7 +138,7 @@ async function start(): Promise<void> {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && flight.phase === 'running') {
       flight.togglePause()
-      syncToolbar()
+      syncUi()
     }
   })
   // Canvas text does not wait for web fonts, so redraw once the HUD and badge fonts are loaded.
@@ -146,7 +146,6 @@ async function start(): Promise<void> {
     document.fonts.load(`700 22px ${theme.fontCondensed}`),
     document.fonts.load(`500 18px ${theme.fontBody}`),
   ]).then(requestDraw, () => {})
-  syncToolbar()
   requestAnimationFrame(frame)
 }
 

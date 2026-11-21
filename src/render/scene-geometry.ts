@@ -105,15 +105,22 @@ function courseOf(snapshot: Snapshot): Course {
   return { number: snapshot.course, rings, bounds: ringBounds(rings), endX }
 }
 
+/** Altitude the scene height spans, m. */
+const VIEW_ALTITUDE = 110
+
+/** CSS px per meter of altitude for a scene `height` px tall. */
+function altitudeScale(height: number): number {
+  return (height * 0.92) / VIEW_ALTITUDE
+}
+
 export function camera(width: number, height: number, planeX: number): Camera {
   const sx = width / (width < 600 ? 170 : 230)
-  const ky = (height * 0.92) / 110
-  return { sx, ky, camX: planeX - (PLANE_AT * width) / sx }
+  return { sx, ky: altitudeScale(height), camX: planeX - (PLANE_AT * width) / sx }
 }
 
 /** Screen y of altitude `h`, CSS px. */
 export function altitudeY(height: number, h: number): number {
-  return height * 0.97 - h * ((height * 0.92) / 110)
+  return height * 0.97 - h * altitudeScale(height)
 }
 
 export function scoreText(snapshot: Snapshot): string {

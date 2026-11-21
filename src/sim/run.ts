@@ -12,6 +12,7 @@ import {
   type PlaneResult,
   type ScoredRun,
 } from './scoring.ts'
+import { createTrace, type TraceBuffer } from './trace.ts'
 import type {
   ControlContext,
   Controller,
@@ -53,28 +54,6 @@ export interface Run extends ScoredRun {
   readonly done: boolean
 }
 
-interface TraceColumns {
-  length: number
-  readonly t: Float64Array
-  readonly ref: Float64Array
-  readonly h: Float64Array
-  readonly hMeas: Float64Array
-  readonly hEst: Float64Array
-  readonly u: Float64Array
-}
-
-function makeTrace(rows: number): TraceColumns {
-  return {
-    length: 0,
-    t: new Float64Array(rows),
-    ref: new Float64Array(rows),
-    h: new Float64Array(rows),
-    hMeas: new Float64Array(rows),
-    hEst: new Float64Array(rows),
-    u: new Float64Array(rows),
-  }
-}
-
 /** One plane: its plant, controller, estimator state, scoring and trace. */
 interface Plane {
   readonly id: PlaneId
@@ -96,7 +75,7 @@ interface Plane {
   points: number
   iae: number
   energy: number
-  readonly trace: TraceColumns
+  readonly trace: TraceBuffer
 }
 
 export function createRun(options: RunOptions): Run {
@@ -123,7 +102,7 @@ export function createRun(options: RunOptions): Run {
     points: 0,
     iae: 0,
     energy: 0,
-    trace: makeTrace(rows),
+    trace: createTrace(rows),
   }
   const planes: readonly Plane[] = [player]
 
@@ -220,18 +199,10 @@ export function createRun(options: RunOptions): Run {
     }
   }
 
-  // The columns are the run's own preallocated buffers, not copies. Rows below
-  // `length` never change; consumers must not write to them.
-  function traceView(tr: TraceColumns): Trace {
-    return {
-      length: tr.length,
-      t: tr.t,
-      ref: tr.ref,
-      h: tr.h,
-      hMeas: tr.hMeas,
-      hEst: tr.hEst,
-      u: tr.u,
-    }
+  // The columns are the run's own preallocated buffers, not copies; `Trace`
+  // rejects index writes to them. Rows below `length` never change.
+  function traceView(tr: TraceBuffer): Trace {
+    return { ...tr }
   }
 
   return {
