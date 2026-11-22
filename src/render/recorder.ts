@@ -45,24 +45,45 @@ function hline(ctx: CanvasRenderingContext2D, x0: number, x1: number, y: number)
   ctx.stroke()
 }
 
-/** A passed or pending ring is a filled bar with an outline; a missed ring is a hollow outline. */
-function drawRingBar(ctx: CanvasRenderingContext2D, bar: RingBar, theme: Theme): void {
+/**
+ * Strokes a `lineWidth` outline inside the rect, so it keeps the rect's outer
+ * size; false, with nothing painted, when the rect is too small to hold it.
+ */
+function insetOutline(
+  ctx: CanvasRenderingContext2D,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  lineWidth: number,
+  color: string,
+): boolean {
+  if (!(width >= lineWidth && height >= lineWidth)) return false
+  const inset = lineWidth / 2
+  ctx.lineWidth = lineWidth
+  ctx.strokeStyle = color
+  ctx.strokeRect(left + inset, top + inset, width - lineWidth, height - lineWidth)
+  return true
+}
+
+/**
+ * A passed or pending ring is a filled bar with an outline; a missed ring is a
+ * hollow outline. A bar shorter than its outline (clipped at the plot edge, or
+ * on a tiny recorder) keeps only its fill, red for a miss, so nothing paints
+ * outside it.
+ */
+export function drawRingBar(ctx: CanvasRenderingContext2D, bar: RingBar, theme: Theme): void {
   const color = RING_BAR_COLOR[bar.state]
   const left = bar.x - bar.width / 2
   const height = bar.bottom - bar.top
   if (bar.state === 'miss') {
-    // Inset by half the stroke so the outline keeps the bar's outer size.
-    const inset = RECORDER_LINE.ringMiss / 2
-    ctx.lineWidth = RECORDER_LINE.ringMiss
-    ctx.strokeStyle = color
-    ctx.strokeRect(left + inset, bar.top + inset, Math.max(0, bar.width - 2 * inset), Math.max(0, height - 2 * inset))
+    if (insetOutline(ctx, left, bar.top, bar.width, height, RECORDER_LINE.ringMiss, color)) return
+    ctx.fillStyle = color
+    ctx.fillRect(left, bar.top, bar.width, height)
   } else {
     ctx.fillStyle = color
     ctx.fillRect(left, bar.top, bar.width, height)
-    const inset = RECORDER_LINE.ringOutline / 2
-    ctx.lineWidth = RECORDER_LINE.ringOutline
-    ctx.strokeStyle = theme[RING_BAR_OUTLINE_TOKEN]
-    ctx.strokeRect(left + inset, bar.top + inset, Math.max(0, bar.width - 2 * inset), Math.max(0, height - 2 * inset))
+    insetOutline(ctx, left, bar.top, bar.width, height, RECORDER_LINE.ringOutline, theme[RING_BAR_OUTLINE_TOKEN])
   }
 }
 
