@@ -1,22 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { PLANT } from '../sim/plant.ts'
-import type { ControlContext } from '../sim/types.ts'
 import { defaultParams } from './index.ts'
-import { flyCourse } from './lib/fly-course.ts'
-import { polyAt } from './lib/poly.ts'
 import { lqrRiccati, riccatiResidual } from './lib/state-feedback.ts'
 import lqr from './lqr.ts'
-
-const ctx = (over: Partial<ControlContext> = {}): ControlContext => ({
-  t: 0,
-  T: 0.02,
-  ref: 50,
-  h: 50,
-  v: 0,
-  input: 0,
-  refAhead: () => 50,
-  ...over,
-})
+import { controlContext as ctx, expectRootsOf, fliesCourse101 } from './lib/testing.ts'
 
 const { a, b } = PLANT
 const K1 = Math.sqrt(0.1)
@@ -106,11 +93,8 @@ describe('lqr analysis', () => {
       expect(riccatiResidual(sol.P, qh, qv, r) / scale).toBeLessThan(1e-9)
       const chi = [1, a + b * sol.k2, b * sol.k1]
       expect(poles).toHaveLength(2)
-      for (const s of poles!) {
-        const res = polyAt(chi, s)
-        expect(Math.hypot(res.re, res.im)).toBeLessThan(1e-9)
-        expect(s.re).toBeLessThan(0)
-      }
+      expectRootsOf(chi, poles!)
+      for (const s of poles!) expect(s.re).toBeLessThan(0)
     })
   }
 
@@ -132,13 +116,5 @@ describe('lqr analysis', () => {
 })
 
 describe('lqr flies course 101', () => {
-  it('passes at least 6 of 10 rings in Autopilot without crashing', () => {
-    const flight = flyCourse(lqr, defaultParams(lqr), 'autopilot')
-    expect(flight.status).not.toBe('crashed')
-    expect(flight.ringsPassed).toBeGreaterThanOrEqual(6)
-  })
-
-  it('finishes Semi-auto', () => {
-    expect(flyCourse(lqr, defaultParams(lqr), 'semi-auto').status).toBe('finished')
-  })
+  fliesCourse101(lqr)
 })

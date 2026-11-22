@@ -1,21 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { PLANT } from '../sim/plant.ts'
-import type { ControlContext } from '../sim/types.ts'
 import { defaultParams } from './index.ts'
-import { flyCourse } from './lib/fly-course.ts'
-import { polyAt } from './lib/poly.ts'
 import polePlacement from './pole-placement.ts'
-
-const ctx = (over: Partial<ControlContext> = {}): ControlContext => ({
-  t: 0,
-  T: 0.02,
-  ref: 50,
-  h: 50,
-  v: 0,
-  input: 0,
-  refAhead: () => 50,
-  ...over,
-})
+import { controlContext as ctx, expectRootsOf, fliesCourse101 } from './lib/testing.ts'
 
 describe('pole-placement module', () => {
   it('declares its id, modes and the ωn and ζ parameters', () => {
@@ -97,10 +84,7 @@ describe('pole-placement analysis', () => {
       const { poles, gains } = polePlacement.analysis!({ wn, zeta })
       expect(gains).toEqual({ k1: (wn * wn) / PLANT.b, k2: (2 * zeta * wn - PLANT.a) / PLANT.b })
       expect(poles).toHaveLength(2)
-      for (const s of poles!) {
-        const r = polyAt(chi, s)
-        expect(Math.hypot(r.re, r.im)).toBeLessThan(1e-9)
-      }
+      expectRootsOf(chi, poles!)
       const [s1, s2] = poles!
       expect(s1!.re + s2!.re).toBeCloseTo(-2 * zeta * wn, 9)
       expect(s1!.re * s2!.re - s1!.im * s2!.im).toBeCloseTo(wn * wn, 9)
@@ -134,13 +118,5 @@ describe('pole-placement analysis', () => {
 })
 
 describe('pole-placement flies course 101', () => {
-  it('passes at least 6 of 10 rings in Autopilot without crashing', () => {
-    const flight = flyCourse(polePlacement, defaultParams(polePlacement), 'autopilot')
-    expect(flight.status).not.toBe('crashed')
-    expect(flight.ringsPassed).toBeGreaterThanOrEqual(6)
-  })
-
-  it('finishes Semi-auto', () => {
-    expect(flyCourse(polePlacement, defaultParams(polePlacement), 'semi-auto').status).toBe('finished')
-  })
+  fliesCourse101(polePlacement)
 })

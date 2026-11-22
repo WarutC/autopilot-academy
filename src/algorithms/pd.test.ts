@@ -1,21 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { PLANT } from '../sim/plant.ts'
-import type { ControlContext } from '../sim/types.ts'
 import { defaultParams } from './index.ts'
-import { flyCourse } from './lib/fly-course.ts'
-import { polyAt } from './lib/poly.ts'
 import pd from './pd.ts'
-
-const ctx = (over: Partial<ControlContext> = {}): ControlContext => ({
-  t: 0,
-  T: 0.02,
-  ref: 50,
-  h: 50,
-  v: 0,
-  input: 0,
-  refAhead: () => 50,
-  ...over,
-})
+import { controlContext as ctx, expectRootsOf, fliesCourse101 } from './lib/testing.ts'
 
 describe('pd module', () => {
   it('declares its id, modes and the Kp and Kd parameters', () => {
@@ -109,10 +96,7 @@ describe('pd analysis', () => {
       const chi = [1, PLANT.a + PLANT.b * Kd, PLANT.b * Kp]
       const poles = pd.analysis!({ Kp, Kd }).poles!
       expect(poles).toHaveLength(2)
-      for (const s of poles) {
-        const r = polyAt(chi, s)
-        expect(Math.hypot(r.re, r.im)).toBeLessThan(1e-9)
-      }
+      expectRootsOf(chi, poles)
       // Vieta: the sum is −(a + b·Kd), the product b·Kp.
       const [s1, s2] = poles as [typeof poles[0], typeof poles[0]]
       expect(s1.re + s2.re).toBeCloseTo(-(PLANT.a + PLANT.b * Kd), 9)
@@ -137,13 +121,5 @@ describe('pd analysis', () => {
 })
 
 describe('pd flies course 101', () => {
-  it('passes at least 6 of 10 rings in Autopilot without crashing', () => {
-    const flight = flyCourse(pd, defaultParams(pd), 'autopilot')
-    expect(flight.status).not.toBe('crashed')
-    expect(flight.ringsPassed).toBeGreaterThanOrEqual(6)
-  })
-
-  it('finishes Semi-auto', () => {
-    expect(flyCourse(pd, defaultParams(pd), 'semi-auto').status).toBe('finished')
-  })
+  fliesCourse101(pd)
 })

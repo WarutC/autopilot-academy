@@ -102,9 +102,31 @@ describe('layout.css control borders and focus', () => {
     for (const r of own) expect(r.body).not.toMatch(/border[\w-]*:[^;]*var\(--line\)/)
   })
 
-  it('draws a halo on every focus rule', () => {
-    const focus = all.filter((r) => r.selector.includes(':focus-visible'))
-    expect(focus.length).toBeGreaterThanOrEqual(8)
-    for (const r of focus) expect(r.body, r.selector).toContain('--focus-halo')
+  it.each([
+    '.btn',
+    '.seg-btn',
+    '.course-field',
+    '.param-number',
+    '.param-slider',
+    '.param-check',
+    '.lesson-chip',
+    '.stick-btn',
+    '.scene',
+    '.setpoint-input',
+  ])('draws a halo around a focused %s', (cls) => {
+    const ringed = all.filter(
+      (r) => r.selector.split(',').some((s) => s.trim() === `${cls}:focus-visible`) && r.body.includes('--focus-halo'),
+    )
+    expect(ringed.length).toBeGreaterThan(0)
+  })
+
+  it('draws a halo for every focus selector in the file', () => {
+    const selectorsOf = (r: { selector: string }) => r.selector.split(',').map((s) => s.trim())
+    const focusSelectors = new Set(all.flatMap(selectorsOf).filter((s) => s.includes(':focus-visible')))
+    expect(focusSelectors.size).toBeGreaterThan(0)
+    for (const sel of focusSelectors) {
+      const ringed = all.some((r) => selectorsOf(r).includes(sel) && r.body.includes('--focus-halo'))
+      expect(ringed, sel).toBe(true)
+    }
   })
 })

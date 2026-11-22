@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PLANT } from '../../sim/plant.ts'
-import { polyAt } from './poly.ts'
 import { lqrRiccati, placementGains, riccatiResidual, stateFeedbackCommand, stateFeedbackPoles } from './state-feedback.ts'
+import { expectRootsOf } from './testing.ts'
 
 const { a, b } = PLANT
 
@@ -78,10 +78,7 @@ describe('stateFeedbackPoles', () => {
     const chi = [1, a + b * 0.157, b * 0.316]
     const poles = stateFeedbackPoles(0.316, 0.157)
     expect(poles).toHaveLength(2)
-    for (const s of poles) {
-      const r = polyAt(chi, s)
-      expect(Math.hypot(r.re, r.im)).toBeLessThan(1e-9)
-    }
+    expectRootsOf(chi, poles)
   })
 
   it('gives no poles for non-finite gains', () => {

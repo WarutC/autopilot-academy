@@ -1,19 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { ControlContext } from '../sim/types.ts'
 import fuzzy, { fuzzyRules } from './fuzzy.ts'
-import { BUILT_IN_ORDER, algorithms, defaultParams, findAlgorithm } from './index.ts'
-import { flyCourse } from './lib/fly-course.ts'
-
-const ctx = (over: Partial<ControlContext> = {}): ControlContext => ({
-  t: 0,
-  T: 0.02,
-  ref: 50,
-  h: 50,
-  v: 0,
-  input: 0,
-  refAhead: () => 50,
-  ...over,
-})
+import { BUILT_IN_ORDER, algorithms, findAlgorithm } from './index.ts'
+import { controlContext as ctx, fliesCourse101 } from './lib/testing.ts'
 
 describe('fuzzy module', () => {
   it('declares its id, modes and three parameters', () => {
@@ -187,13 +175,5 @@ describe('fuzzy controller', () => {
 })
 
 describe('fuzzy flies course 101', () => {
-  it('passes at least 6 of 10 rings in Autopilot without crashing', () => {
-    const flight = flyCourse(fuzzy, defaultParams(fuzzy), 'autopilot')
-    expect(flight.status).not.toBe('crashed')
-    expect(flight.ringsPassed).toBeGreaterThanOrEqual(6)
-  })
-
-  it('finishes Semi-auto', () => {
-    expect(flyCourse(fuzzy, defaultParams(fuzzy), 'semi-auto').status).toBe('finished')
-  })
+  fliesCourse101(fuzzy)
 })

@@ -5,17 +5,7 @@ import type { ControlContext } from '../sim/types.ts'
 import cascadePid, { climbRateCommand } from './cascade-pid.ts'
 import { defaultParams } from './index.ts'
 import { FLY_COURSE, flyCourse, semiAutoSetpoint } from './lib/fly-course.ts'
-
-const ctx = (over: Partial<ControlContext> = {}): ControlContext => ({
-  t: 0,
-  T: 0.02,
-  ref: 50,
-  h: 50,
-  v: 0,
-  input: 0,
-  refAhead: () => 50,
-  ...over,
-})
+import { controlContext as ctx, fliesCourse101 } from './lib/testing.ts'
 
 /** Flies course 101 with a wrapper that records the commanded and measured climb rate each tick. */
 function recordFlight(params: Record<string, number>, mode: 'semi-auto' | 'autopilot') {
@@ -166,15 +156,7 @@ describe('cascade-pid controller', () => {
 })
 
 describe('cascade-pid flies course 101', () => {
-  it('passes at least 6 of 10 rings in Autopilot without crashing', () => {
-    const flight = flyCourse(cascadePid, defaultParams(cascadePid), 'autopilot')
-    expect(flight.status).not.toBe('crashed')
-    expect(flight.ringsPassed).toBeGreaterThanOrEqual(6)
-  })
-
-  it('finishes Semi-auto', () => {
-    expect(flyCourse(cascadePid, defaultParams(cascadePid), 'semi-auto').status).toBe('finished')
-  })
+  fliesCourse101(cascadePid)
 
   for (const mode of ['autopilot', 'semi-auto'] as const) {
     it(`never commands a climb rate beyond the limit in ${mode}`, () => {

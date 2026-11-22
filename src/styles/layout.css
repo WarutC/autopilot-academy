@@ -27,8 +27,8 @@ body {
   font: var(--type-body);
 }
 
-/* Below the wide layout the header is hidden but the h1 stays for screen readers. */
-@media (width <= 960px) {
+/* Below the wide layout and in phone landscape the header is hidden but the h1 stays for screen readers. */
+@media (width <= 960px), (orientation: landscape) and (max-height: 540px) {
   .site-header {
     position: absolute;
     width: 1px;
@@ -97,11 +97,6 @@ body {
   border-color: var(--tab-ink);
 }
 
-.btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
 .seg {
   display: inline-flex;
   border: 2px solid var(--strong);
@@ -128,21 +123,6 @@ body {
   color: var(--chip-on-ink);
 }
 
-.btn:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 7px var(--focus-halo);
-}
-
-/* Lift a focused segment so its neighbours do not paint over the ring. */
-.seg-btn:focus-visible {
-  position: relative;
-  z-index: 1;
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 7px var(--focus-halo);
-}
-
 /* The Course number field and its visible label. */
 .course-label {
   display: inline-flex;
@@ -152,9 +132,10 @@ body {
   font: var(--type-control);
 }
 
-.course-field {
+/* The Course field and the parameter number fields share one look; only the width differs. */
+.course-field,
+.param-number {
   box-sizing: border-box;
-  width: 4.5em;
   min-height: 48px;
   padding: 8px 12px;
   background: var(--field);
@@ -166,14 +147,16 @@ body {
   text-align: right;
 }
 
-.course-field:disabled {
-  opacity: 0.45;
+.course-field {
+  width: 4.5em;
 }
 
-.course-field:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 7px var(--focus-halo);
+.param-number {
+  width: 6em;
+}
+
+.course-field:disabled {
+  opacity: 0.45;
 }
 
 /* The scene and the banner over it. */
@@ -298,20 +281,6 @@ body {
   font-size: inherit;
 }
 
-.param-number {
-  box-sizing: border-box;
-  width: 6em;
-  min-height: 48px;
-  padding: 8px 12px;
-  background: var(--field);
-  color: var(--ink);
-  border: 2px solid var(--strong);
-  border-radius: 8px;
-  font: var(--type-number);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
 .param-slider {
   width: 100%;
   min-height: 32px;
@@ -332,14 +301,6 @@ body {
   margin: 0;
   flex: none;
   accent-color: var(--accent);
-}
-
-.param-number:focus-visible,
-.param-slider:focus-visible,
-.param-check:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 7px var(--focus-halo);
 }
 
 .btn-reset {
@@ -404,15 +365,10 @@ body {
   border-color: var(--chip-on);
 }
 
+.btn:disabled,
 .lesson-chip:disabled {
   opacity: 0.45;
   cursor: default;
-}
-
-.lesson-chip:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 7px var(--focus-halo);
 }
 
 /* Their display rules would otherwise override the hidden attribute. */
@@ -420,7 +376,9 @@ body {
 .btn-reset[hidden],
 .stick[hidden],
 .setpoint[hidden],
-.mode-switch[hidden] {
+.mode-switch[hidden],
+.pole-readout[hidden],
+.pole-readout-plot[hidden] {
   display: none;
 }
 
@@ -463,18 +421,6 @@ body {
 .stick-btn.held {
   background: var(--tab);
   color: var(--tab-ink);
-}
-
-.stick-btn:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 7px var(--focus-halo);
-}
-
-.scene:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 7px var(--focus-halo);
 }
 
 /*
@@ -550,10 +496,29 @@ body {
   image-rendering: pixelated;
 }
 
+/* Every focusable control: a yellow ring with a dark halo. */
+.btn:focus-visible,
+.seg-btn:focus-visible,
+.course-field:focus-visible,
+.param-number:focus-visible,
+.param-slider:focus-visible,
+.param-check:focus-visible,
+.lesson-chip:focus-visible,
+.stick-btn:focus-visible,
+.scene:focus-visible,
 .setpoint-input:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
   box-shadow: 0 0 0 7px var(--focus-halo);
+}
+
+/* Lift a focused segment so its neighbours do not paint over the ring. */
+.seg-btn:focus-visible {
+  position: relative;
+  z-index: 1;
+}
+
+.setpoint-input:focus-visible {
   border-radius: 8px;
 }
 
@@ -564,12 +529,15 @@ body {
   display: none;
 }
 
-/* Phone portrait: a 4:3 scene, and the stick buttons left of the score badge column. */
+/* Phone portrait: a 4:3 scene. */
 @media (max-width: 599px) {
   .scene {
     aspect-ratio: 4 / 3;
   }
+}
 
+/* On a phone the stick buttons sit left of the score badge column. */
+@media (max-width: 599px), (orientation: landscape) and (max-height: 540px) {
   .stick {
     top: 16px;
     bottom: 16px;
@@ -587,18 +555,6 @@ body {
 @media (orientation: landscape) and (max-height: 540px) {
   #app {
     --page-pad: 8px;
-  }
-
-  .site-header {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    padding: 0;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-    border: 0;
   }
 
   .layout {
@@ -623,12 +579,6 @@ body {
 
   .toolbar > * {
     flex: none;
-  }
-
-  .stick {
-    top: 16px;
-    bottom: 16px;
-    right: 124px;
   }
 
   .drawer-toggle,
@@ -729,9 +679,4 @@ body {
 
 .pole-readout-lookahead {
   margin: 0;
-}
-
-.pole-readout[hidden],
-.pole-readout-plot[hidden] {
-  display: none;
 }

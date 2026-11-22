@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { PLANT } from '../sim/plant.ts'
 import type { ControlContext } from '../sim/types.ts'
 import { defaultParams } from './index.ts'
-import { polyAt } from './lib/poly.ts'
 import pid from './pid.ts'
+import { controlContext as ctx, expectRootsOf } from './lib/testing.ts'
 
 // The prototype's PID `make`, inlined as the reference.
 const prototypeClamp = (x: number, lo: number, hi: number) => (x < lo ? lo : x > hi ? hi : x)
@@ -24,17 +24,6 @@ function prototypeMake(p: { Kp: number; Ki: number; Kd: number; aw: boolean; dme
     },
   }
 }
-
-const ctx = (over: Partial<ControlContext> = {}): ControlContext => ({
-  t: 0,
-  T: 0.02,
-  ref: 50,
-  h: 50,
-  v: 0,
-  input: 0,
-  refAhead: () => 50,
-  ...over,
-})
 
 // Deterministic, varied inputs.
 const tick = (k: number): ControlContext =>
@@ -192,10 +181,7 @@ describe('pid analysis', () => {
       for (const toggles of [{ aw: 0, dmeas: 0 }, { aw: 1, dmeas: 1 }]) {
         const poles = pid.analysis!({ ...gains, ...toggles }).poles!
         expect(poles).toHaveLength(3)
-        for (const s of poles) {
-          const r = polyAt(chi, s)
-          expect(Math.hypot(r.re, r.im)).toBeLessThan(1e-9)
-        }
+        expectRootsOf(chi, poles)
         // Vieta: the sum is −(a + b·Kd), the product −b·Ki.
         expect(poles.reduce((sum, s) => sum + s.re, 0)).toBeCloseTo(-(a + b * gains.Kd), 9)
         expect(poles.reduce((sum, s) => sum + s.im, 0)).toBeCloseTo(0, 9)

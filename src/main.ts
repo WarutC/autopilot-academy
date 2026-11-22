@@ -5,18 +5,18 @@ import { draw as drawRecorder } from './render/recorder.ts'
 import { draw as drawScene } from './render/scene.ts'
 import { draw as drawSplane } from './render/splane.ts'
 import { PLANT, SETPOINT_MAX, SETPOINT_MIN } from './sim/plant.ts'
-import { createRun, type Run, type RunPlayer } from './sim/run.ts'
+import type { Run, RunPlayer } from './sim/run.ts'
 import type { FlightMode, Snapshot } from './sim/types.ts'
 import { watchAutoPause } from './ui/auto-pause.ts'
 import { createAutopilotCard } from './ui/autopilot-card.ts'
 import { bannerContent, createBanner } from './ui/banner.ts'
 import { createDrawer, PHONE_LANDSCAPE } from './ui/drawer.ts'
-import { createFlight, inFlight, pauseForInterruption, type Phase } from './ui/flight.ts'
+import { createFlight, inFlight, pauseForInterruption, playerRuns, type Phase } from './ui/flight.ts'
 import { createStick, gameKey, typingTarget } from './ui/input.ts'
 import { createModeSwitch } from './ui/mode-switch.ts'
 import { createPoleReadout } from './ui/pole-readout.ts'
 import { browserStorage, validCourse } from './ui/persistence.ts'
-import { createRouter, drawCourse, parseRoute } from './ui/router.ts'
+import { createRouter, drawCourse, followAddress, parseRoute } from './ui/router.ts'
 import { createScoreMirror } from './ui/score-mirror.ts'
 import { createSetpointSlider } from './ui/setpoint-slider.ts'
 import { createStickButtons } from './ui/stick-buttons.ts'
@@ -96,14 +96,10 @@ const stick = createStick((value) => {
   if (inFlight(flight.phase)) flight.run.setInput(value)
 })
 
-// Every new run takes the player's live inputs, so a button held across Fly
-// counts from the first step and the setpoint holds across runs.
-const flight = createFlight(() => {
-  const run = createRun({ course: store.course, mode: runMode(), player })
-  run.setSetpoint(setpoint)
-  run.setInput(stick.value)
-  return run
-}, store)
+const flight = createFlight(
+  playerRuns(() => ({ course: store.course, mode: runMode(), player, setpoint, stick: stick.value })),
+  store,
+)
 
 const stickButtons = createStickButtons(document, stick)
 stage.append(stickButtons.element)
@@ -380,14 +376,11 @@ function start(): void {
     if (!event.matches) recorderCard.classList.remove('expanded')
   })
   window.addEventListener('blur', () => stick.releaseAll())
-  // An edited address selects its lesson and course outside a flight; during one it is put back.
-  router.onChange((hash) => {
-    if (!inFlight(flight.phase)) {
-      const next = parseRoute(hash, algorithms)
-      if (next.lesson !== undefined) selectLesson(next.lesson)
-      if (next.course !== undefined) loadCourse(next.course)
-    }
-    router.write(store.lesson, store.course)
+  followAddress(router, algorithms, {
+    flying: () => inFlight(flight.phase),
+    selectLesson,
+    loadCourse,
+    current: () => ({ lesson: store.lesson, course: store.course }),
   })
   window.addEventListener('keydown', (event) => {
     const direction = gameKey(event)

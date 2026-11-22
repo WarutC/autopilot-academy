@@ -1,19 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { ControlContext } from '../sim/types.ts'
 import { defaultParams } from './index.ts'
-import { flyCourse } from './lib/fly-course.ts'
 import mpc, { buildModel, MODEL_STEP, solve } from './mpc.ts'
-
-const ctx = (over: Partial<ControlContext> = {}): ControlContext => ({
-  t: 0,
-  T: 0.02,
-  ref: 50,
-  h: 50,
-  v: 0,
-  input: 0,
-  refAhead: () => 50,
-  ...over,
-})
+import { controlContext as ctx, fliesCourse101 } from './lib/testing.ts'
 
 /** Dense Gaussian elimination with partial pivoting, the reference for H·U = −f. */
 function denseSolve(A: number[][], b: number[]): number[] {
@@ -277,13 +265,5 @@ describe('mpc controller', () => {
 })
 
 describe('mpc flies course 101', () => {
-  it('passes at least 6 of 10 rings in Autopilot without crashing', () => {
-    const flight = flyCourse(mpc, defaultParams(mpc), 'autopilot')
-    expect(flight.status).not.toBe('crashed')
-    expect(flight.ringsPassed).toBeGreaterThanOrEqual(6)
-  })
-
-  it('finishes Semi-auto', () => {
-    expect(flyCourse(mpc, defaultParams(mpc), 'semi-auto').status).toBe('finished')
-  })
+  fliesCourse101(mpc)
 })

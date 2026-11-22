@@ -70,6 +70,32 @@ export interface Router {
   onChange(listener: (hash: string) => void): void
 }
 
+/** What an edited address acts on. */
+export interface AddressTarget {
+  /** True while a run is flying or paused. */
+  flying(): boolean
+  selectLesson(id: string): void
+  loadCourse(course: number): void
+  /** The lesson and course on screen, written back to the address. */
+  current(): { readonly lesson: string; readonly course: number }
+}
+
+/**
+ * An edited address selects its lesson and course outside a flight; during
+ * one it is put back. Either way the address ends on the current route.
+ */
+export function followAddress(router: Router, modules: readonly AlgorithmModule[], target: AddressTarget): void {
+  router.onChange((hash) => {
+    if (!target.flying()) {
+      const next = parseRoute(hash, modules)
+      if (next.lesson !== undefined) target.selectLesson(next.lesson)
+      if (next.course !== undefined) target.loadCourse(next.course)
+    }
+    const { lesson, course } = target.current()
+    router.write(lesson, course)
+  })
+}
+
 export function createRouter(win: RouterWindow): Router {
   return {
     read() {

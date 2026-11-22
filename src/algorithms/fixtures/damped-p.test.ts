@@ -3,7 +3,7 @@ import readme from '../../../README.md?raw'
 import { PLANT } from '../../sim/plant.ts'
 import { defaultParams } from '../index.ts'
 import { flyCourse } from '../lib/fly-course.ts'
-import { polyAt } from '../lib/poly.ts'
+import { expectRootsOf } from '../lib/testing.ts'
 import exampleSource from './damped-p.ts?raw'
 import dampedP from './damped-p.ts'
 
@@ -28,10 +28,7 @@ describe('damped-p example module', () => {
       const chi = [1, PLANT.a + PLANT.b * Kv, PLANT.b * Kp]
       const poles = dampedP.analysis!({ Kp, Kv }).poles!
       expect(poles).toHaveLength(2)
-      for (const s of poles) {
-        const r = polyAt(chi, s)
-        expect(Math.hypot(r.re, r.im)).toBeLessThan(1e-9)
-      }
+      expectRootsOf(chi, poles)
     })
   }
 

@@ -1,12 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import { defaultParams } from '../algorithms/index.ts'
+import manual from '../algorithms/manual.ts'
+import pAlgorithm from '../algorithms/p.ts'
 import pid from '../algorithms/pid.ts'
 import { PLANT } from '../sim/plant.ts'
-import { createRun } from '../sim/run.ts'
+import { createRun, type RunPlayer } from '../sim/run.ts'
 import { summarize } from '../sim/scoring.ts'
 import { createPhase } from './store.ts'
 import { createStick } from './input.ts'
-import { createFlight, flyLabel, inFlight, MAX_FRAME, pauseForInterruption, pauseLabel, type Flight, type Phase, type Speed } from './flight.ts'
+import {
+  createFlight,
+  flyLabel,
+  inFlight,
+  MAX_FRAME,
+  pauseForInterruption,
+  pauseLabel,
+  playerRuns,
+  type Flight,
+  type Phase,
+  type PlayerInputs,
+  type Speed,
+} from './flight.ts'
 
 const pidRun = () =>
   createRun({ course: 101, mode: 'autopilot', player: { algorithm: pid, params: defaultParams(pid) } })
@@ -249,5 +263,54 @@ describe('pauseForInterruption', () => {
     expect(pauseForInterruption(f, stick)).toBe(false)
     expect(f.phase).toBe(phase)
     expect(stick.value).toBe(0)
+  })
+})
+
+describe('playerRuns', () => {
+  const pPlayer: RunPlayer = { algorithm: pAlgorithm, params: defaultParams(pAlgorithm) }
+  const manualPlayer: RunPlayer = { algorithm: manual, params: {} }
+  const player = (run: ReturnType<ReturnType<typeof playerRuns>>) => run.snapshot().planes[0]!
+
+  it('makes a run on the course and in the mode given, with the setpoint applied', () => {
+    const run = playerRuns(() => ({ course: 202, mode: 'semi-auto', player: pPlayer, setpoint: 80, stick: 0 }))()
+    expect(run.snapshot().course).toBe(202)
+    expect(player(run).mode).toBe('semi-auto')
+    expect(player(run).ref).toBe(80)
+  })
+
+  it('counts a stick held across Fly from the first step', () => {
+    const run = playerRuns(() => ({ course: 101, mode: 'manual', player: manualPlayer, setpoint: 50, stick: 1 }))()
+    run.step(1)
+    expect(player(run).u).toBe(1)
+  })
+
+  it('reads the live inputs on every call', () => {
+    let inputs: PlayerInputs = { course: 101, mode: 'manual', player: manualPlayer, setpoint: 50, stick: 1 }
+    const makeRun = playerRuns(() => inputs)
+    const first = makeRun()
+    first.step(1)
+    expect(first.snapshot().course).toBe(101)
+    expect(player(first).mode).toBe('manual')
+    expect(player(first).u).toBe(1)
+
+    const created: string[] = []
+    const tracked: RunPlayer = {
+      algorithm: { id: 'tracked', create: (params) => (created.push('tracked'), pAlgorithm.create(params)) },
+      params: defaultParams(pAlgorithm),
+    }
+    inputs = { course: 303, mode: 'semi-auto', player: tracked, setpoint: 30, stick: -1 }
+    const second = makeRun()
+    second.step(1)
+    expect(created).toEqual(['tracked'])
+    expect(second.snapshot().course).toBe(303)
+    expect(player(second).mode).toBe('semi-auto')
+    expect(player(second).ref).toBe(30)
+    // The stick only reaches the controller in Manual; a P player starting level at 50 m dives toward 30 m.
+    expect(player(second).u).toBeLessThan(0)
+
+    inputs = { ...inputs, mode: 'manual', player: manualPlayer, stick: -1 }
+    const third = makeRun()
+    third.step(1)
+    expect(player(third).u).toBe(-1)
   })
 })

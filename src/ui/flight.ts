@@ -4,8 +4,8 @@
 // the frame loop feeds it elapsed seconds.
 
 import { PLANT } from '../sim/plant.ts'
-import type { Run } from '../sim/run.ts'
-import type { Snapshot } from '../sim/types.ts'
+import { createRun, type Run, type RunPlayer } from '../sim/run.ts'
+import type { FlightMode, Snapshot, StickInput } from '../sim/types.ts'
 import type { Stick } from './input.ts'
 import { createPhase, type Phase, type PhaseOwner } from './store.ts'
 
@@ -91,6 +91,30 @@ export function createFlight(makeRun: () => Run, owner: PhaseOwner = createPhase
     snapshot() {
       return run.snapshot()
     },
+  }
+}
+
+/** The player's live inputs a new run starts from. */
+export interface PlayerInputs {
+  readonly course: number
+  readonly mode: FlightMode
+  readonly player: RunPlayer
+  readonly setpoint: number
+  readonly stick: StickInput
+}
+
+/**
+ * The `makeRun` for `createFlight`: every new run takes the player's live
+ * inputs, so a button held across Fly counts from the first step and the
+ * setpoint holds across runs.
+ */
+export function playerRuns(inputs: () => PlayerInputs): () => Run {
+  return () => {
+    const { course, mode, player, setpoint, stick } = inputs()
+    const run = createRun({ course, mode, player })
+    run.setSetpoint(setpoint)
+    run.setInput(stick)
+    return run
   }
 }
 
