@@ -233,6 +233,12 @@ body {
   color: var(--muted);
 }
 
+/* Ghost is the wingman everywhere; its text is nudged toward Ink to keep 4.5:1 on the panel. */
+.logbook-tag-wingman {
+  border-color: var(--ghost);
+  color: color-mix(in srgb, var(--ghost) 90%, var(--ink));
+}
+
 /* The scene and the banner over it. */
 .stage {
   position: relative;

@@ -4,7 +4,7 @@ import type { Snapshot, Trace } from '../sim/types.ts'
 import { LIGHT, type Theme } from '../ui/theme.ts'
 import { fixtureSnapshot } from './fixture.ts'
 import { RECORDER_FONT, RECORDER_LINE } from './recorder-geometry.ts'
-import { draw } from './recorder.ts'
+import { READING_ALPHA, draw } from './recorder.ts'
 import { SCENE } from './scene.ts'
 
 /** A copy of `trace` whose elevator column swings between -1 and 1. */
@@ -155,9 +155,9 @@ describe('recorder draw', () => {
     for (const theme of [LIGHT, DARK]) {
       const { ctx, calls } = recordingContext()
       draw(ctx, sensorSnapshot(1), theme, { width: 1000, height: 240, dpr: 1 })
-      const alpha = calls.indexOf('globalAlpha=0.6')
+      const alpha = calls.indexOf(`globalAlpha=${READING_ALPHA}`)
       expect(alpha).toBeGreaterThan(-1)
-      expect(calls[alpha + 1]).toBe('fillStyle=#888888')
+      expect(calls[alpha + 1]).toBe(`fillStyle=${theme.muted}`)
       const dots = calls.filter((c) => c.startsWith('fillRect=[') && JSON.parse(c.slice('fillRect='.length))[2] === 4)
       expect(dots.length).toBe(Math.ceil(sensorSnapshot(1).trace.player!.length / 3))
       for (const d of dots) expect(JSON.parse(d.slice('fillRect='.length))[3]).toBe(4)
@@ -170,14 +170,14 @@ describe('recorder draw', () => {
       const legend = calls.filter((c) => c.startsWith('text=')).slice(-5)
       expect(legend).toEqual(['text=Target', 'text=Altitude', 'text=Altimeter', 'text=Kalman estimate', 'text=Elevator'])
       // The altimeter swatch is dotted, in the reading gray.
-      expect(calls.join('\n')).toContain('setLineDash=[[3,5]]\nlineWidth=3\nstrokeStyle=#888888')
+      expect(calls.join('\n')).toContain(`setLineDash=[[3,5]]\nlineWidth=3\nstrokeStyle=${theme.muted}`)
     }
   })
 
   it('has no dots, estimate or entries without noise or the filter', () => {
     const { ctx, calls } = recordingContext()
     draw(ctx, fixtureSnapshot(), LIGHT, { width: 1000, height: 240, dpr: 1 })
-    expect(calls).not.toContain('globalAlpha=0.6')
+    expect(calls).not.toContain(`globalAlpha=${READING_ALPHA}`)
     expect(calls).not.toContain(`strokeStyle=${LIGHT.amber}`)
     expect(calls).not.toContain('text=Altimeter')
     expect(calls).not.toContain('text=Kalman estimate')

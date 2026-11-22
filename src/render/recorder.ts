@@ -2,8 +2,8 @@
 // altimeter readings as gray dots, the altitude flown (and the wingman's, under
 // it), the Kalman estimate in Amber on top, ring bars colored by result, the
 // elevator command in a lower band, and a labeled vertical marker for every
-// parameter change. Geometry comes
-// from `recorderGeometry`; this only strokes and fills what it returns.
+// parameter change. Geometry comes from `recorderGeometry`; this only strokes
+// and fills what it returns.
 
 import type { Snapshot } from '../sim/types.ts'
 import type { Theme } from '../ui/theme.ts'
@@ -11,9 +11,11 @@ import { RECORDER_DOT, RECORDER_FONT, RECORDER_LINE, recorderGeometry, type Lege
 import { SCENE } from './scene.ts'
 import { TARGET_DASH, type Point, type RingState, type SceneSize } from './scene-geometry.ts'
 
-/** Altimeter readings: a neutral gray, the same in both themes, drawn at `READING_ALPHA`. */
-const READING_COLOR = '#888888'
-const READING_ALPHA = 0.6
+/**
+ * Altimeter readings are dots in the theme's Muted gray at this opacity: soft
+ * enough to sit under the lines, and still 3:1 against the panel in both themes.
+ */
+export const READING_ALPHA = 0.8
 
 /** Dash and gap of the altimeter legend swatch, CSS px. */
 const READING_SWATCH_DASH = [3, 5]
@@ -100,7 +102,7 @@ export function draw(ctx: CanvasRenderingContext2D, snapshot: Snapshot, theme: T
     const side = RECORDER_DOT.reading
     ctx.save()
     ctx.globalAlpha = READING_ALPHA
-    ctx.fillStyle = READING_COLOR
+    ctx.fillStyle = theme.muted
     for (const p of g.readings) ctx.fillRect(p.x - side / 2, p.y - side / 2, side, side)
     ctx.restore()
   }
@@ -154,7 +156,7 @@ export function draw(ctx: CanvasRenderingContext2D, snapshot: Snapshot, theme: T
     target: theme.refline,
     altitude: theme.accent,
     wingman: theme.ghost,
-    altimeter: READING_COLOR,
+    altimeter: theme.muted,
     estimate: theme.amber,
     elevator: theme.muted,
   }

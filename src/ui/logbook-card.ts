@@ -80,7 +80,7 @@ export function createLogbookCard(doc: Document, nameOf: (lesson: string) => str
       name.append(nameOf(row.lesson) || row.lesson)
       for (const t of row.tags) {
         const span = doc.createElement('span')
-        span.className = 'logbook-tag'
+        span.className = t === 'wingman' ? 'logbook-tag logbook-tag-wingman' : 'logbook-tag'
         span.textContent = t
         name.append(' ', span)
       }

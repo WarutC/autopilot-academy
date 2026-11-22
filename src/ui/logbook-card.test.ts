@@ -103,10 +103,13 @@ describe('createLogbookCard', () => {
     const cells = (tr: FakeElement) => (tr.children as FakeElement[]).map((td) => td.textContent)
     expect(cells(rows[0]!)).toEqual(['PID', '72.3', '9/10', '124', '4.3'])
     const tagsOf = (tr: FakeElement) =>
-      (tr.children[0] as FakeElement).all().filter((e) => e.className === 'logbook-tag').map((e) => e.textContent)
+      (tr.children[0] as FakeElement).all().filter((e) => e.className.split(' ').includes('logbook-tag')).map((e) => e.textContent)
     expect(tagsOf(rows[0]!)).toEqual([])
     expect(tagsOf(rows[1]!)).toEqual(['wingman', 'crashed', 'retuned'])
     expect(tagsOf(rows[2]!)).toEqual(['semi-auto'])
+    // Only the wingman tag takes the wingman's Ghost style.
+    const ghostTags = (rows[1]!.children[0] as FakeElement).all().filter((e) => e.className.includes('logbook-tag-wingman'))
+    expect(ghostTags.map((e) => e.textContent)).toEqual(['wingman'])
     expect((rows[1]!.children[0] as FakeElement).children[0]).toBe('LQR')
     expect((rows[2]!.children[0] as FakeElement).children[0]).toBe('custom')
   })
