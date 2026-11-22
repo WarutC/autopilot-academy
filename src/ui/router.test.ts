@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import manual from '../algorithms/manual.ts'
 import pid from '../algorithms/pid.ts'
-import { createRouter, drawCourse, lessonHash, parseRoute, type RouterWindow } from './router.ts'
+import { createRouter, drawCourse, followAddress, lessonHash, parseRoute, type RouterWindow } from './router.ts'
 
 const modules = [manual, pid]
 
@@ -118,5 +118,72 @@ describe('createRouter', () => {
     location.hash = '#/lesson/manual?course=9'
     fire()
     expect(seen).toEqual(['#/lesson/manual?course=9'])
+  })
+})
+
+describe('followAddress', () => {
+  function follow(hash: string, flying: boolean) {
+    const fake = fakeWindow('#/lesson/pid?course=101')
+    const state = { lesson: 'pid', course: 101 }
+    const log: string[] = []
+    const router = createRouter(fake.win)
+    const recorded = {
+      ...router,
+      write(lesson: string, course: number) {
+        log.push(`write ${lesson} ${course}`)
+        router.write(lesson, course)
+      },
+    }
+    followAddress(recorded, modules, {
+      flying: () => flying,
+      selectLesson(id) {
+        log.push(`lesson ${id}`)
+        state.lesson = id
+      },
+      loadCourse(course) {
+        log.push(`course ${course}`)
+        state.course = course
+      },
+      current: () => ({ ...state }),
+    })
+    fake.location.hash = hash
+    fake.fire()
+    return { log, calls: fake.calls, location: fake.location }
+  }
+
+  it('selects the lesson and loads the course outside a flight, then writes them back', () => {
+    const { log, calls, location } = follow('#/lesson/manual?course=9', false)
+    expect(log).toEqual(['lesson manual', 'course 9', 'write manual 9'])
+    // The address already names the current route, so nothing is rewritten.
+    expect(calls).toEqual([])
+    expect(location.hash).toBe('#/lesson/manual?course=9')
+  })
+
+  it('selects and loads nothing during a flight and puts the current route back', () => {
+    const { log, calls, location } = follow('#/lesson/manual?course=9', true)
+    expect(log).toEqual(['write pid 101'])
+    expect(calls).toEqual(['/autopilot-academy/?fixture#/lesson/pid?course=101'])
+    expect(location.hash).toBe('#/lesson/pid?course=101')
+  })
+
+  it('ignores an unknown lesson and an invalid course and writes the current route back', () => {
+    const { log, calls, location } = follow('#/lesson/nope?course=0', false)
+    expect(log).toEqual(['write pid 101'])
+    expect(calls).toEqual(['/autopilot-academy/?fixture#/lesson/pid?course=101'])
+    expect(location.hash).toBe('#/lesson/pid?course=101')
+  })
+
+  it('selects only the lesson when the course is invalid', () => {
+    const { log, calls, location } = follow('#/lesson/manual?course=0', false)
+    expect(log).toEqual(['lesson manual', 'write manual 101'])
+    expect(calls).toEqual(['/autopilot-academy/?fixture#/lesson/manual?course=101'])
+    expect(location.hash).toBe('#/lesson/manual?course=101')
+  })
+
+  it('loads only the course when the lesson is unknown', () => {
+    const { log, calls, location } = follow('#/lesson/nope?course=7', false)
+    expect(log).toEqual(['course 7', 'write pid 7'])
+    expect(calls).toEqual(['/autopilot-academy/?fixture#/lesson/pid?course=7'])
+    expect(location.hash).toBe('#/lesson/pid?course=7')
   })
 })

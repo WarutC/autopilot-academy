@@ -60,7 +60,7 @@ function lessonText(doc: Document, p: HTMLElement, lesson: string): void {
 
 export function createAutopilotCard(
   doc: Document,
-  lessons: readonly AlgorithmModule[],
+  lessons: readonly (AlgorithmModule & { readonly community?: boolean })[],
   selectedId: string,
   params: Params,
   handlers: AutopilotCardHandlers,
@@ -84,11 +84,13 @@ export function createAutopilotCard(
   const chips = lessons.map((m, i) => {
     const b = doc.createElement('button')
     b.type = 'button'
-    b.className = 'lesson-chip'
+    // A contributed module is marked "Community" in place of its own tag.
+    const tag = m.community ? 'Community' : m.tag
+    b.className = m.community ? 'lesson-chip lesson-chip-community' : 'lesson-chip'
     const lines = [
       ['lesson-chip-number', `Lesson ${i + 1}`],
       ['lesson-chip-name', m.name],
-      ['lesson-chip-tag', m.tag],
+      ['lesson-chip-tag', tag],
     ].map(([className, text]) => {
       const span = doc.createElement('span')
       span.className = className
@@ -96,7 +98,7 @@ export function createAutopilotCard(
       return span
     })
     b.append(...lines)
-    b.setAttribute('aria-label', `Lesson ${i + 1}, ${m.name}, ${m.tag}`)
+    b.setAttribute('aria-label', `Lesson ${i + 1}, ${m.name}, ${tag}`)
     b.addEventListener('click', () => {
       // In flight only the selected chip is live, and picking it changes nothing.
       if (inFlight(phase) && m.id !== module.id) return

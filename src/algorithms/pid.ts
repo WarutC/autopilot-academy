@@ -1,6 +1,8 @@
 import { clamp } from '../sim/clamp.ts'
+import { PLANT } from '../sim/plant.ts'
 import type { ControlContext } from '../sim/types.ts'
 import type { AlgorithmModule, Params } from './index.ts'
+import { polyRoots } from './lib/poly.ts'
 
 const pid: AlgorithmModule = {
   id: 'pid',
@@ -47,6 +49,12 @@ const pid: AlgorithmModule = {
         return u
       },
     }
+  },
+  analysis(params: Params) {
+    // Closed loop of v' = -a·v + b·u, h' = v with u = Kp·e + Ki·∫e − Kd·v, unsaturated:
+    // s³ + (a + b·Kd)·s² + b·Kp·s + b·Ki. The toggles do not move the poles.
+    const { a, b } = PLANT
+    return { poles: polyRoots([1, a + b * params.Kd, b * params.Kp, b * params.Ki]) }
   },
 }
 

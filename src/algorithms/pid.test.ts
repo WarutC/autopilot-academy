@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { PLANT } from '../sim/plant.ts'
 import type { ControlContext } from '../sim/types.ts'
 import { defaultParams } from './index.ts'
 import pid from './pid.ts'
+import { controlContext as ctx, expectRootsOf } from './lib/testing.ts'
 
 // The prototype's PID `make`, inlined as the reference.
 const prototypeClamp = (x: number, lo: number, hi: number) => (x < lo ? lo : x > hi ? hi : x)
@@ -23,17 +25,6 @@ function prototypeMake(p: { Kp: number; Ki: number; Kd: number; aw: boolean; dme
   }
 }
 
-const ctx = (over: Partial<ControlContext> = {}): ControlContext => ({
-  t: 0,
-  T: 0.02,
-  ref: 50,
-  h: 50,
-  v: 0,
-  input: 0,
-  refAhead: () => 50,
-  ...over,
-})
-
 // Deterministic, varied inputs.
 const tick = (k: number): ControlContext =>
   ctx({
@@ -52,7 +43,6 @@ describe('pid module', () => {
     expect(pid.params.map((s) => s.key)).toEqual(['Kp', 'Ki', 'Kd', 'aw', 'dmeas'])
     expect(pid.params.filter((s) => s.toggle).map((s) => s.key)).toEqual(['aw', 'dmeas'])
     expect(pid.params[0].accessibleName).toBe('Kp, proportional gain')
-    expect(pid.analysis).toBeUndefined()
   })
 
   it('ends its lesson with a Try: sentence and no HTML', () => {
@@ -174,5 +164,39 @@ describe('pid controller', () => {
       expect(c.compute(ctx({ v: bad }))).toBe(0)
     }
     expect(Number.isFinite(c.compute(ctx({ ref: 51, h: 50 })))).toBe(true)
+  })
+})
+
+describe('pid analysis', () => {
+  const { a, b } = PLANT
+  const sets = [
+    { Kp: 0.2, Ki: 0.03, Kd: 0.05 },
+    { Kp: 0.6, Ki: 0.2, Kd: 0.1 },
+    { Kp: 1, Ki: 0.5, Kd: 0 },
+    { Kp: 0.05, Ki: 0, Kd: 0.3 },
+  ]
+  for (const gains of sets) {
+    it(`gives the roots of the closed-loop cubic for Kp ${gains.Kp}, Ki ${gains.Ki}, Kd ${gains.Kd}`, () => {
+      const chi = [1, a + b * gains.Kd, b * gains.Kp, b * gains.Ki]
+      for (const toggles of [{ aw: 0, dmeas: 0 }, { aw: 1, dmeas: 1 }]) {
+        const poles = pid.analysis!({ ...gains, ...toggles }).poles!
+        expect(poles).toHaveLength(3)
+        expectRootsOf(chi, poles)
+        // Vieta: the sum is −(a + b·Kd), the product −b·Ki.
+        expect(poles.reduce((sum, s) => sum + s.re, 0)).toBeCloseTo(-(a + b * gains.Kd), 9)
+        expect(poles.reduce((sum, s) => sum + s.im, 0)).toBeCloseTo(0, 9)
+        const product = poles.reduce((acc, s) => ({ re: acc.re * s.re - acc.im * s.im, im: acc.re * s.im + acc.im * s.re }), { re: 1, im: 0 })
+        expect(product.re).toBeCloseTo(-b * gains.Ki, 9)
+      }
+    })
+  }
+
+  it('puts a pole at 0 when Ki is 0', () => {
+    const poles = pid.analysis!({ ...defaultParams(pid), Ki: 0 }).poles!
+    expect(poles.some((s) => s.re === 0 && s.im === 0)).toBe(true)
+  })
+
+  it('gives stable default poles', () => {
+    for (const s of pid.analysis!(defaultParams(pid)).poles!) expect(s.re).toBeLessThan(0)
   })
 })
