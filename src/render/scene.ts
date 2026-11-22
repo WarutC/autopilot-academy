@@ -33,7 +33,11 @@ import { PLAYER_PALETTE, WINGMAN_PALETTE, drawPlaneSprite } from './sprites.ts'
 /** Scene colors, the same in both themes because the scene is a picture. */
 export const SCENE = {
   outline: '#1A2A3A',
+  /** The scenery outline at night, light so it holds 3:1 on the dark sky. */
+  outlineNight: '#B4C2E0',
   target: '#FFFFFF',
+  /** Under the white target dash, so it holds 3:1 on the pale horizon bands too. */
+  targetCasing: '#1A2A3A',
   ringGold: '#F2B705',
   ringHit: '#2FBF5F',
   ringMiss: '#E0353C',
@@ -44,6 +48,9 @@ export const SCENE = {
   /** Text on the badge; fixed because the badge background is. */
   badgeInk: '#13294B',
 } as const
+
+/** The wingman's trail: the scene's wingman blue, the same as its sprite body. */
+export const WINGMAN_TRAIL = WINGMAN_PALETTE.R
 
 /** The wingman's sprite opacity. */
 const WINGMAN_ALPHA = 0.6
@@ -122,10 +129,10 @@ const RIDGE_STEP = 6
 const WAVE_LENGTH = 6
 const WAVE_RISE = 0.014
 
-function drawCloud(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string): void {
+function drawCloud(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, outline: string): void {
   // The outline is twice the line floor, under the fill, so the floor shows outside.
   ctx.lineWidth = LINE.outline * 2
-  ctx.strokeStyle = SCENE.outline
+  ctx.strokeStyle = outline
   for (const [dx, dy, k] of CLOUD_BLOBS) {
     ctx.beginPath()
     ctx.arc(x + dx * r, y + dy * r, k * r, 0, Math.PI * 2)
@@ -139,7 +146,7 @@ function drawCloud(ctx: CanvasRenderingContext2D, x: number, y: number, r: numbe
   }
 }
 
-function drawClouds(ctx: CanvasRenderingContext2D, clouds: readonly Cloud[], view: BackdropView, offset: number, color: string): void {
+function drawClouds(ctx: CanvasRenderingContext2D, clouds: readonly Cloud[], view: BackdropView, offset: number, color: string, outline: string): void {
   const { width: W, height: H, sx } = view
   // The outline is drawn `LINE.outline * 2` wide, so it shows `LINE.outline` px past the blobs.
   const reach = (CLOUD_REACH * CLOUD_SIZE_MAX * H + LINE.outline) / sx
@@ -149,7 +156,7 @@ function drawClouds(ctx: CanvasRenderingContext2D, clouds: readonly Cloud[], vie
       const x = (start + cloud.x - offset) * sx
       const extent = CLOUD_REACH * r + LINE.outline
       if (x + extent < 0 || x - extent > W) continue
-      drawCloud(ctx, x, cloud.y * H, r, color)
+      drawCloud(ctx, x, cloud.y * H, r, color, outline)
     }
   }
 }
@@ -162,6 +169,7 @@ function drawRidge(
   offset: number,
   fill: string,
   snow: string | undefined,
+  outline: string,
 ): void {
   const { width: W, height: H, sx } = view
   const base = layer.base * H
@@ -184,18 +192,18 @@ function drawRidge(
     ctx.restore()
   }
   ctx.lineWidth = LINE.outline
-  ctx.strokeStyle = SCENE.outline
+  ctx.strokeStyle = outline
   ctx.stroke()
 }
 
-function drawSea(ctx: CanvasRenderingContext2D, waves: Scenery['waves'], view: BackdropView, offset: number, color: string): void {
+function drawSea(ctx: CanvasRenderingContext2D, waves: Scenery['waves'], view: BackdropView, offset: number, color: string, outline: string): void {
   const { width: W, height: H, groundY, sx } = view
   const top = SEA_TOP * H
   if (!(groundY > top)) return
   ctx.fillStyle = color
   ctx.fillRect(0, top, W, groundY - top)
   ctx.lineWidth = LINE.outline
-  ctx.strokeStyle = SCENE.outline
+  ctx.strokeStyle = outline
   ctx.beginPath()
   ctx.moveTo(0, top)
   ctx.lineTo(W, top)
@@ -221,11 +229,20 @@ function drawSea(ctx: CanvasRenderingContext2D, waves: Scenery['waves'], view: B
   })
 }
 
-function drawCity(ctx: CanvasRenderingContext2D, layer: CityLayer, base: number, view: BackdropView, offset: number, fill: string, window: string): void {
+function drawCity(
+  ctx: CanvasRenderingContext2D,
+  layer: CityLayer,
+  base: number,
+  view: BackdropView,
+  offset: number,
+  fill: string,
+  windowColor: string,
+  outline: string,
+): void {
   const { width: W, height: H, sx } = view
   const widest = Math.max(...layer.buildings.map((b) => b.width))
   ctx.lineWidth = LINE.outline
-  ctx.strokeStyle = SCENE.outline
+  ctx.strokeStyle = outline
   for (const start of periodStarts(offset - widest, offset + W / sx, layer.period)) {
     for (const b of layer.buildings) {
       const x = (start + b.x - offset) * sx
@@ -239,7 +256,7 @@ function drawCity(ctx: CanvasRenderingContext2D, layer: CityLayer, base: number,
       // Windows: a cols × rows grid in the building, each window half its cell.
       const cellW = w / b.cols
       const cellH = (h * 0.9) / b.rows
-      ctx.fillStyle = window
+      ctx.fillStyle = windowColor
       for (let r = 0; r < b.rows; r++) {
         for (let c = 0; c < b.cols; c++) {
           if (!b.lit[r * b.cols + c]) continue
@@ -253,7 +270,8 @@ function drawCity(ctx: CanvasRenderingContext2D, layer: CityLayer, base: number,
 /**
  * Paints the scenery behind the scene: sky, stars at night, the sun or moon,
  * clouds, far and near terrain (or the sea), and the ground. Each layer moves
- * with the camera by its parallax factor; under `reducedMotion` none moves.
+ * with the camera by its parallax factor; under `reducedMotion` they all move
+ * together at one rate.
  */
 export function drawBackdrop(ctx: CanvasRenderingContext2D, scenery: Scenery, view: BackdropView, reducedMotion: boolean): void {
   const { width: W, height: H, groundY } = view
@@ -265,6 +283,7 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, scenery: Scenery, vi
   const anchor = (PLANE_AT * W) / view.sx
   const moved = layerOffsets(view.camX + anchor, reducedMotion)
   const offsets = { clouds: moved.clouds - anchor, far: moved.far - anchor, near: moved.near - anchor }
+  const outline = scenery.time === 'night' ? SCENE.outlineNight : SCENE.outline
 
   ctx.save()
   ctx.lineJoin = 'round'
@@ -285,18 +304,18 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, scenery: Scenery, vi
   ctx.fillStyle = style.orb
   ctx.fill()
   ctx.lineWidth = LINE.outline
-  ctx.strokeStyle = SCENE.outline
+  ctx.strokeStyle = outline
   ctx.stroke()
 
-  drawClouds(ctx, scenery.clouds, view, offsets.clouds, style.cloud)
+  drawClouds(ctx, scenery.clouds, view, offsets.clouds, style.cloud, outline)
 
   const ridges = RIDGES[scenery.terrain]
-  if (ridges.far) drawRidge(ctx, ridges.far, scenery.ridges.far, view, offsets.far, colors.far, colors.snow)
-  if (scenery.terrain === 'coast') drawSea(ctx, scenery.waves, view, offsets.near, colors.near)
-  else if (ridges.near) drawRidge(ctx, ridges.near, scenery.ridges.near, view, offsets.near, colors.near, undefined)
+  if (ridges.far) drawRidge(ctx, ridges.far, scenery.ridges.far, view, offsets.far, colors.far, colors.snow, outline)
+  if (scenery.terrain === 'coast') drawSea(ctx, scenery.waves, view, offsets.near, colors.near, outline)
+  else if (ridges.near) drawRidge(ctx, ridges.near, scenery.ridges.near, view, offsets.near, colors.near, undefined, outline)
   if (scenery.terrain === 'city') {
-    drawCity(ctx, scenery.city.far, CITY.far.base * H, view, offsets.far, colors.far, style.window)
-    drawCity(ctx, scenery.city.near, groundY, view, offsets.near, colors.near, style.window)
+    drawCity(ctx, scenery.city.far, CITY.far.base * H, view, offsets.far, colors.far, style.window, outline)
+    drawCity(ctx, scenery.city.near, groundY, view, offsets.near, colors.near, style.window, outline)
   }
 
   ctx.fillStyle = colors.ground
@@ -305,7 +324,7 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, scenery: Scenery, vi
   ctx.moveTo(0, groundY)
   ctx.lineTo(W, groundY)
   ctx.lineWidth = LINE.outline
-  ctx.strokeStyle = SCENE.outline
+  ctx.strokeStyle = outline
   ctx.stroke()
 
   ctx.restore()
@@ -337,27 +356,32 @@ export function draw(ctx: CanvasRenderingContext2D, snapshot: Snapshot, theme: T
     ctx.save()
     ctx.setLineDash(TARGET_DASH as number[])
     ctx.lineCap = 'butt'
-    ctx.lineWidth = LINE.target
-    ctx.strokeStyle = SCENE.target
     ctx.beginPath()
     g.target.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)))
+    // A dark casing under each dash, as the rim is under a ring.
+    ctx.lineWidth = LINE.target + LINE.rim
+    ctx.strokeStyle = SCENE.targetCasing
+    ctx.stroke()
+    ctx.lineWidth = LINE.target
+    ctx.strokeStyle = SCENE.target
     ctx.stroke()
     ctx.restore()
   }
 
   for (const ring of g.rings) drawRing(ctx, ring, false)
 
-  // The wingman's trail and plane go first, so the player's draw over them.
-  if (g.wingman) drawTrail(ctx, g.wingman.trail, theme.ghost)
+  // The wingman's trail and plane go first, so the player's draw over them. The
+  // trail is in the sprite's fixed blue, so plane and trail match in both themes.
+  if (g.wingman) drawTrail(ctx, g.wingman.trail, WINGMAN_TRAIL)
   drawTrail(ctx, g.trail, theme.accent)
 
   if (g.wingman) {
     ctx.save()
     ctx.globalAlpha = WINGMAN_ALPHA
-    drawPlaneSprite(ctx, g.wingman.plane, WINGMAN_PALETTE, snapshot.t, theme.reducedMotion)
+    drawPlaneSprite(ctx, g.wingman.plane, WINGMAN_PALETTE, snapshot.t, theme.reducedMotion, dpr)
     ctx.restore()
   }
-  drawPlaneSprite(ctx, g.plane, PLAYER_PALETTE, snapshot.t, theme.reducedMotion)
+  drawPlaneSprite(ctx, g.plane, PLAYER_PALETTE, snapshot.t, theme.reducedMotion, dpr)
 
   for (const ring of g.rings) if (ring.front) drawRing(ctx, ring, true)
 

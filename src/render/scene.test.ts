@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { BUILT_IN_ORDER, algorithms, defaultParams } from '../algorithms/index.ts'
-import { createRun } from '../sim/run.ts'
 import { LIGHT } from '../ui/theme.ts'
 import { fixtureSnapshot } from './fixture.ts'
-import { SCENE, drawBackdrop, draw } from './scene.ts'
-import { sceneryFor } from './scenery.ts'
+import { contrast } from '../styles/css-test-helpers.ts'
+import { SCENE, WINGMAN_TRAIL, drawBackdrop, draw } from './scene.ts'
+import { TIMES, sceneryFor } from './scenery.ts'
 import { PLANE_AT, SPRITE_PIXEL, TARGET_DASH } from './scene-geometry.ts'
 import { PLAYER_PALETTE, WINGMAN_PALETTE } from './sprites.ts'
 import type { Snapshot } from '../sim/types.ts'
@@ -133,11 +132,13 @@ describe('draw', () => {
     for (const w of widths) expect(w).toBeGreaterThanOrEqual(3 - 1e-9)
   })
 
-  it('draws the wingman trail in the ghost color and its translucent blue plane before the player, and a third HUD line', () => {
+  it('draws the wingman trail in the sprite blue and its translucent blue plane before the player, and a third HUD line', () => {
     const base = fixtureSnapshot()
     const { ctx, calls } = recordingContext()
     draw(ctx, withWingman(), LIGHT, { width: 1280, height: 720, dpr: 1 })
-    const ghost = calls.indexOf(`strokeStyle=${LIGHT.ghost}`)
+    expect(WINGMAN_TRAIL).toBe(WINGMAN_PALETTE.R)
+    expect(calls).not.toContain(`strokeStyle=${LIGHT.ghost}`)
+    const ghost = calls.indexOf(`strokeStyle=${WINGMAN_TRAIL}`)
     const accent = calls.indexOf(`strokeStyle=${LIGHT.accent}`)
     expect(ghost).toBeGreaterThan(-1)
     expect(ghost).toBeLessThan(accent)
@@ -169,10 +170,10 @@ describe('draw', () => {
     )
   })
 
-  it('draws one red plane and no ghost color or blue sprite without a wingman', () => {
+  it('draws one red plane and no blue trail or sprite without a wingman', () => {
     const { ctx, calls } = recordingContext()
     draw(ctx, fixtureSnapshot(), LIGHT, { width: 1280, height: 720, dpr: 1 })
-    expect(calls).not.toContain(`strokeStyle=${LIGHT.ghost}`)
+    expect(calls).not.toContain(`strokeStyle=${WINGMAN_TRAIL}`)
     expect(calls).not.toContain(`fillStyle=${WINGMAN_PALETTE.R}`)
     expect(calls.filter((c) => c.startsWith('globalAlpha='))).toEqual([])
     expect(calls).toContain(`fillStyle=${PLAYER_PALETTE.R}`)
@@ -265,32 +266,6 @@ function argumentContext(): { ctx: CanvasRenderingContext2D; calls: string[]; ar
   return { ctx: ctx as unknown as CanvasRenderingContext2D, calls, arcs }
 }
 
-describe('built-in lessons on course 101', () => {
-  // Points each lesson scores with its default parameters, so drawing never changes a flight.
-  const BASELINE: Record<string, number> = {
-    manual: 11.795229726204916,
-    'on-off': 54.439954662027084,
-    p: 59.25905397662555,
-    pi: 47.03620377168636,
-    pd: 86.3586314124062,
-    pid: 83.78203374249364,
-    'cascade-pid': 89.86982915152086,
-    'pole-placement': 98.70692021321797,
-    lqr: 99.2851183305402,
-    fuzzy: 83.33818117801178,
-    mpc: 99.92726957803184,
-  }
-
-  it.each(BUILT_IN_ORDER)('%s scores its baseline', (id) => {
-    const algorithm = algorithms.find((a) => a.id === id)!
-    expect(algorithm).toBeDefined()
-    const mode = id === 'manual' ? 'manual' : 'autopilot'
-    const run = createRun({ course: 101, mode, player: { algorithm, params: defaultParams(algorithm) } })
-    for (let guard = 0; !run.done && guard < 1e6; guard++) run.step(1)
-    expect(run.snapshot().planes[0]!.points).toBeCloseTo(BASELINE[id]!, 9)
-  })
-})
-
 describe('drawBackdrop', () => {
   const view = (camX: number) => ({ width: 1480, height: 831, groundY: 800, sx: 1480 / 230, camX })
   const at = (course: number, camX: number, reduced: boolean) => {
@@ -299,9 +274,31 @@ describe('drawBackdrop', () => {
     return rec.calls
   }
 
-  it.each(SAMPLE_COURSES)('holds still under reduced motion on course %i', (course) => {
-    expect(at(course, 900, true)).toEqual(at(course, 0, true))
+  it.each(SAMPLE_COURSES)('still scrolls, without depth, under reduced motion on course %i', (course) => {
+    expect(at(course, 900, true)).not.toEqual(at(course, 0, true))
     expect(at(course, 900, true)).not.toEqual(at(course, 900, false))
+  })
+
+  it('moves every layer by the same distance under reduced motion, and by different distances without', () => {
+    /** Main-blob cloud centers and city building lefts, CSS px, on night-city course 7. */
+    const layers = (camX: number, reduced: boolean) => {
+      const rec = argumentContext()
+      drawBackdrop(rec.ctx, sceneryFor(7), view(camX), reduced)
+      const clouds = rec.arcs.slice(1).filter((_, i) => i % 12 === 0).map((a) => a[0]!)
+      const buildings = rec.calls.filter((c) => c.startsWith('strokeRect(')).map((c) => Number(c.slice('strokeRect('.length).split(',')[0]))
+      return { clouds, buildings }
+    }
+    // Moving the camera less than one cloud or building spacing keeps the same features in view.
+    const shift = (reduced: boolean) => {
+      const a = layers(100, reduced)
+      const b = layers(101, reduced)
+      return [a.clouds[0]! - b.clouds[0]!, a.buildings[0]! - b.buildings[0]!]
+    }
+    const [cloudR, cityR] = shift(true)
+    expect(cloudR).toBeGreaterThan(0)
+    expect(cloudR).toBeCloseTo(cityR!, 2)
+    const [cloud, city] = shift(false)
+    expect(Math.abs(cloud! - city!)).toBeGreaterThan(0.5)
   })
 
   it.each(SAMPLE_COURSES)('scrolls with the camera on course %i', (course) => {
@@ -329,6 +326,30 @@ describe('drawBackdrop', () => {
     for (const d of phone) expect(Math.min(...wide.map((w) => Math.abs(w - d)))).toBeLessThan(1e-6)
   })
 
+  it('rebuilds the scenery when the course changes, so course 7 after course 14 paints the night stars', () => {
+    const stars = (course: number) => {
+      const { ctx, calls } = recordingContext()
+      draw(ctx, onCourse(course), LIGHT, { width: 1280, height: 720, dpr: 1 })
+      return calls.includes('fillStyle=rgba(255, 255, 255, 0.85)')
+    }
+    expect(stars(14)).toBe(false)
+    expect(stars(7)).toBe(true)
+    expect(stars(14)).toBe(false)
+  })
+
+  it('moves the backdrop when the plane moves, as one layer under reduced motion', () => {
+    const backdrop = (dx: number, reducedMotion: boolean) => {
+      const s = fixtureSnapshot()
+      const moved = { ...s, planes: [{ ...s.planes[0], x: s.planes[0].x + dx }] as Snapshot['planes'] }
+      const rec = argumentContext()
+      draw(rec.ctx, { ...moved, course: 7 }, { ...LIGHT, reducedMotion }, { width: 1280, height: 720, dpr: 1 })
+      // The backdrop ends at the ground line, the first full-width stroke after the city.
+      return rec.calls.filter((c) => c.startsWith('arc(') || c.startsWith('strokeRect('))
+    }
+    for (const reduced of [false, true]) expect(backdrop(1, reduced)).not.toEqual(backdrop(0, reduced))
+    expect(backdrop(1, true)).not.toEqual(backdrop(1, false))
+  })
+
   it('paints the night sky with stars and the day sky without', () => {
     const fills = (course: number) => {
       const rec = recordingContext()
@@ -339,5 +360,29 @@ describe('drawBackdrop', () => {
     expect(fills(14)).toBe(3)
     // Course 7 is a night city: sixty stars, buildings and their windows.
     expect(fills(7)).toBeGreaterThan(60)
+  })
+})
+
+describe('scene contrast', () => {
+  /** The colors of a sky gradient from `from` (a fraction of the scene height) down. */
+  const bands = (time: keyof typeof TIMES, from = 0) => TIMES[time].sky.filter(([at]) => at >= from).map(([, color]) => color)
+
+  it.each(['morning', 'sunset'] as const)('keeps the target dash and the gold rings at 3:1 on the %s horizon', (time) => {
+    // The horizon: the lower half of the sky, where the pale bands are.
+    for (const band of bands(time, 0.5)) {
+      // The white dash shows on its dark casing; the gold band on its rim.
+      expect(Math.max(contrast(SCENE.target, band), contrast(SCENE.targetCasing, band))).toBeGreaterThanOrEqual(3)
+      expect(contrast(SCENE.target, SCENE.targetCasing)).toBeGreaterThanOrEqual(3)
+      expect(Math.max(contrast(SCENE.ringGold, band), contrast(SCENE.ringRim, band))).toBeGreaterThanOrEqual(3)
+      expect(contrast(SCENE.ringGold, SCENE.ringRim)).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it('keeps the scenery outline at 3:1 on the night sky', () => {
+    for (const band of bands('night')) expect(contrast(SCENE.outlineNight, band)).toBeGreaterThanOrEqual(3)
+    const { ctx, calls } = recordingContext()
+    drawBackdrop(ctx, sceneryFor(7), { width: 1480, height: 831, groundY: 800, sx: 1480 / 230, camX: 0 }, false)
+    expect(calls).toContain(`strokeStyle=${SCENE.outlineNight}`)
+    expect(calls).not.toContain(`strokeStyle=${SCENE.outline}`)
   })
 })

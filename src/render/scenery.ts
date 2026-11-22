@@ -123,8 +123,8 @@ export const STAR = 'rgba(255, 255, 255, 0.85)'
 export const WAVE = 'rgba(255, 255, 255, 0.75)'
 
 /** How much night darkens the land: each channel moves this share toward `NIGHT_TINT`. */
-export const NIGHT_SHADE = 0.42
-export const NIGHT_TINT: readonly [number, number, number] = [10, 20, 48]
+const NIGHT_SHADE = 0.42
+const NIGHT_TINT: readonly [number, number, number] = [10, 20, 48]
 
 export interface TerrainColors {
   /** Far ridge, or far buildings. */
@@ -144,13 +144,20 @@ export const TERRAIN_DAY: Readonly<Record<Terrain, TerrainColors>> = {
   city: { far: '#8FA3C0', near: '#56688A', ground: '#5E6E80' },
 }
 
-/** The day colors mixed `NIGHT_SHADE` toward `NIGHT_TINT`. */
-export const TERRAIN_NIGHT: Readonly<Record<Terrain, TerrainColors>> = {
-  mountains: { far: '#1F5941', near: '#417A3D', snow: '#989CA8', ground: '#377137' },
-  coast: { far: '#286248', near: '#1F5686', ground: '#8D8067' },
-  desert: { far: '#794D39', near: '#8B7150', ground: '#886F4C' },
-  city: { far: '#576784', near: '#364564', ground: '#3B485E' },
+/** `hex` with each channel moved `NIGHT_SHADE` of the way toward `NIGHT_TINT`. */
+function toNight(hex: string): string {
+  const n = parseInt(hex.slice(1), 16)
+  const channels = [n >> 16, (n >> 8) & 255, n & 255].map((c, i) => Math.round(c + (NIGHT_TINT[i]! - c) * NIGHT_SHADE))
+  return `#${channels.map((c) => c.toString(16).padStart(2, '0')).join('').toUpperCase()}`
 }
+
+/** The day colors mixed `NIGHT_SHADE` toward `NIGHT_TINT`. */
+export const TERRAIN_NIGHT: Readonly<Record<Terrain, TerrainColors>> = Object.fromEntries(
+  Object.entries(TERRAIN_DAY).map(([terrain, day]) => [
+    terrain,
+    Object.fromEntries(Object.entries(day).map(([part, color]) => [part, toNight(color)])) as unknown as TerrainColors,
+  ]),
+) as Record<Terrain, TerrainColors>
 
 export function terrainColors(scenery: Pick<Scenery, 'time' | 'terrain'>): TerrainColors {
   return (scenery.time === 'night' ? TERRAIN_NIGHT : TERRAIN_DAY)[scenery.terrain]
@@ -203,24 +210,27 @@ const WAVE_JITTER = 11
 
 export const STAR_COUNT = 60
 
-/** How far each layer moves per meter the camera moves. */
+/**
+ * How far each moving layer moves per meter the camera moves. The sky, the sun
+ * or moon and the stars are at infinity and never move.
+ */
 export const PARALLAX = {
-  sky: 0,
-  stars: 0,
-  orb: 0,
   clouds: 0.35,
   far: 0.15,
   near: 0.45,
-  ground: 1,
 } as const
 
 export type Layer = keyof typeof PARALLAX
 export type LayerOffsets = Readonly<Record<Layer, number>>
 
-/** Each layer's offset in meters for the camera at `camX`; all zero under reduced motion. */
+/**
+ * Each layer's offset in meters for the camera at `camX`. Under reduced motion
+ * the parallax collapses to one layer: every layer moves at the near terrain's
+ * rate, so the scenery still scrolls with the course but without depth.
+ */
 export function layerOffsets(camX: number, reducedMotion: boolean): LayerOffsets {
   const out = {} as Record<Layer, number>
-  for (const layer of Object.keys(PARALLAX) as Layer[]) out[layer] = reducedMotion ? 0 : PARALLAX[layer] * camX
+  for (const layer of Object.keys(PARALLAX) as Layer[]) out[layer] = (reducedMotion ? PARALLAX.near : PARALLAX[layer]) * camX
   return out
 }
 
@@ -268,6 +278,8 @@ const phases = (rng: () => number): RidgePhases => [rng() * 2 * Math.PI, rng() *
 
 /** The scenery of course `course`, the same on every call and every screen. */
 export function sceneryFor(course: number): Scenery {
+  // Every course draws every feature, whatever its terrain, so each draw keeps
+  // its place in the stream and a change to one terrain never moves another's.
   const rng = stream(course, 'scenery')
   const time = TIMES_OF_DAY[Math.floor(rng() * 4)]!
   const terrain = TERRAINS[Math.floor(rng() * 4)]!

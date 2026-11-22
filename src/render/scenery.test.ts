@@ -1,13 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { defaultParams } from '../algorithms/index.ts'
-import pid from '../algorithms/pid.ts'
+import { BUILT_IN_ORDER, algorithms, defaultParams } from '../algorithms/index.ts'
 import { makeCourse } from '../sim/course.ts'
 import * as rng from '../sim/rng.ts'
 import { createRun } from '../sim/run.ts'
 import {
   CLOUD_PERIOD,
-  NIGHT_SHADE,
-  NIGHT_TINT,
   PARALLAX,
   TERRAIN_DAY,
   TERRAIN_NIGHT,
@@ -15,6 +12,7 @@ import {
   periodStarts,
   ridgeHeight,
   sceneryFor,
+  terrainColors,
 } from './scenery.ts'
 
 vi.mock('../sim/rng.ts', async (importOriginal) => {
@@ -86,31 +84,48 @@ describe('sceneryFor', () => {
     }
   })
 
-  it('leaves the course rings and a PID flight unchanged', () => {
+  it('leaves the course rings unchanged', () => {
     sceneryFor(101)
     expect(makeCourse(101).rings.map((r) => r.h)).toEqual([
       66.65258437674493, 23.89941192837432, 66.32025621831417, 54.19208866264671, 80.37898861570284,
       62.72705052699894, 22.825694946106523, 44.619856676552445, 57.482498216442764, 34.03771034022793,
     ])
-    const run = createRun({ course: 101, mode: 'autopilot', player: { algorithm: pid, params: defaultParams(pid) } })
+  })
+
+  // Points each built-in lesson scores on course 101 with its default
+  // parameters. The scenery reads only its own stream, so building it never
+  // changes a flight.
+  const BASELINE: Record<string, number> = {
+    manual: 11.795229726204916,
+    'on-off': 54.439954662027084,
+    p: 59.25905397662555,
+    pi: 47.03620377168636,
+    pd: 86.3586314124062,
+    pid: 83.78203374249364,
+    'cascade-pid': 89.86982915152086,
+    'pole-placement': 98.70692021321797,
+    lqr: 99.2851183305402,
+    fuzzy: 83.33818117801178,
+    mpc: 99.92726957803184,
+  }
+
+  it.each(BUILT_IN_ORDER)('leaves the %s lesson scoring its baseline on course 101', (id) => {
+    sceneryFor(101)
+    const algorithm = algorithms.find((a) => a.id === id)!
+    expect(algorithm).toBeDefined()
+    const mode = id === 'manual' ? 'manual' : 'autopilot'
+    const run = createRun({ course: 101, mode, player: { algorithm, params: defaultParams(algorithm) } })
     for (let guard = 0; !run.done && guard < 1e6; guard++) run.step(1)
-    expect(run.snapshot().planes[0]!.points).toBeCloseTo(83.78203374249364, 9)
+    expect(run.snapshot().planes[0]!.points).toBeCloseTo(BASELINE[id]!, 9)
   })
 })
 
-describe('night colors', () => {
-  it('are the day colors mixed toward the night tint', () => {
-    const mix = (hex: string): string => {
-      const n = parseInt(hex.slice(1), 16)
-      return `#${[n >> 16, (n >> 8) & 255, n & 255]
-        .map((c, i) => Math.round(c + (NIGHT_TINT[i]! - c) * NIGHT_SHADE).toString(16).padStart(2, '0'))
-        .join('')
-        .toUpperCase()}`
-    }
-    for (const [terrain, day] of Object.entries(TERRAIN_DAY)) {
-      const night = TERRAIN_NIGHT[terrain as keyof typeof TERRAIN_NIGHT]
-      for (const [part, color] of Object.entries(day)) expect(night[part as keyof typeof night]).toBe(mix(color))
-    }
+describe('terrainColors', () => {
+  it('picks the night colors at night and the day colors otherwise', () => {
+    expect(terrainColors({ time: 'night', terrain: 'city' })).toBe(TERRAIN_NIGHT.city)
+    expect(terrainColors({ time: 'sunset', terrain: 'city' })).toBe(TERRAIN_DAY.city)
+    expect(TERRAIN_NIGHT.city).not.toEqual(TERRAIN_DAY.city)
+    for (const time of ['morning', 'afternoon'] as const) expect(terrainColors({ time, terrain: 'mountains' })).toBe(TERRAIN_DAY.mountains)
   })
 })
 
@@ -118,14 +133,13 @@ describe('layerOffsets', () => {
   it('moves each layer by its parallax factor', () => {
     const o = layerOffsets(900, false)
     for (const [layer, f] of Object.entries(PARALLAX)) expect(o[layer as keyof typeof o]).toBeCloseTo(f * 900, 9)
-    expect(o.sky).toBe(0)
     expect(o.clouds).not.toBe(o.far)
     expect(o.far).not.toBe(o.near)
-    expect(o.near).not.toBe(o.ground)
   })
 
-  it('holds every layer still under reduced motion', () => {
-    for (const camX of [0, 900]) for (const v of Object.values(layerOffsets(camX, true))) expect(v).toBe(0)
+  it('moves every layer together at the near terrain rate under reduced motion', () => {
+    expect(Object.values(layerOffsets(0, true))).toEqual([0, 0, 0])
+    for (const v of Object.values(layerOffsets(900, true))) expect(v).toBeCloseTo(PARALLAX.near * 900, 9)
   })
 })
 
