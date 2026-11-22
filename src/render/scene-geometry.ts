@@ -91,6 +91,9 @@ export const FONT = {
   scoreLabel: 18,
 } as const
 
+/** Smallest side of one sprite pixel, CSS px. */
+export const SPRITE_PIXEL = 3
+
 /** Target line dash pattern, CSS px. */
 export const TARGET_DASH: readonly number[] = [10, 7]
 

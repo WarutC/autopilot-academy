@@ -1,11 +1,11 @@
 // Paints the flight scene for one snapshot: the course's scenery as parallax
-// layers, then the target, rings, trails, planes, HUD and score badge. Geometry
-// comes from `sceneGeometry` and `sceneryFor`; UI colors come from the theme,
-// scene colors are fixed.
+// layers, then the target, rings, trails, pixel-sprite planes, HUD and score
+// badge. Geometry comes from `sceneGeometry` and `sceneryFor`, plane sprites
+// from `sprites.ts`; UI colors come from the theme, scene colors are fixed.
 
 import type { Snapshot } from '../sim/types.ts'
 import type { Theme } from '../ui/theme.ts'
-import { FONT, INSET, LINE, PLANE_AT, TARGET_DASH, sceneGeometry, type PlaneShape, type Point, type RingShape, type RingState, type SceneSize } from './scene-geometry.ts'
+import { FONT, INSET, LINE, PLANE_AT, TARGET_DASH, sceneGeometry, type Point, type RingShape, type RingState, type SceneSize } from './scene-geometry.ts'
 import {
   CITY,
   CLOUD_PERIOD,
@@ -28,6 +28,7 @@ import {
   type RidgePhases,
   type Scenery,
 } from './scenery.ts'
+import { PLAYER_PALETTE, WINGMAN_PALETTE, drawPlaneSprite } from './sprites.ts'
 
 /** Scene colors, the same in both themes because the scene is a picture. */
 export const SCENE = {
@@ -37,14 +38,15 @@ export const SCENE = {
   ringHit: '#2FBF5F',
   ringMiss: '#E0353C',
   ringRim: '#4A3500',
-  planeRed: '#D7262E',
-  planeRedShade: '#9E141B',
   hudText: '#FFFFFF',
   hudShadow: 'rgba(0, 0, 0, 0.75)',
   badge: 'rgba(255, 255, 255, 0.55)',
   /** Text on the badge; fixed because the badge background is. */
   badgeInk: '#13294B',
 } as const
+
+/** The wingman's sprite opacity. */
+const WINGMAN_ALPHA = 0.6
 
 const RING_COLOR: Record<RingState, string> = {
   pending: SCENE.ringGold,
@@ -62,56 +64,6 @@ function drawRing(ctx: CanvasRenderingContext2D, ring: RingShape, half: boolean)
   ctx.lineWidth = ring.width
   ctx.strokeStyle = RING_COLOR[ring.state]
   ctx.stroke()
-}
-
-/** A plain plane, nose to +x, drawn in a 100-unit box scaled to `length`, with `fill` for the body and `shade` for the wing. */
-function drawPlane(
-  ctx: CanvasRenderingContext2D,
-  plane: PlaneShape,
-  fill: string,
-  shade: string,
-): void {
-  const { x, y, angle, length } = plane
-  const s = length / 100
-  ctx.save()
-  ctx.translate(x, y)
-  ctx.rotate(-angle)
-  ctx.scale(s, s)
-  ctx.lineJoin = 'round'
-  ctx.lineWidth = LINE.outline / s
-  ctx.strokeStyle = SCENE.outline
-
-  // Tail fin.
-  ctx.fillStyle = fill
-  ctx.beginPath()
-  ctx.moveTo(-32, -4)
-  ctx.lineTo(-50, -25)
-  ctx.lineTo(-40, -26)
-  ctx.lineTo(-24, -6)
-  ctx.closePath()
-  ctx.fill()
-  ctx.stroke()
-
-  // Body.
-  ctx.beginPath()
-  ctx.moveTo(40, -8)
-  ctx.quadraticCurveTo(10, -14, -20, -6)
-  ctx.lineTo(-46, -3)
-  ctx.lineTo(-46, 3)
-  ctx.lineTo(-20, 8)
-  ctx.quadraticCurveTo(10, 12, 40, 8)
-  ctx.closePath()
-  ctx.fill()
-  ctx.stroke()
-
-  // Wing.
-  ctx.fillStyle = shade
-  ctx.beginPath()
-  ctx.roundRect(-10, -2, 34, 8, 3)
-  ctx.fill()
-  ctx.stroke()
-
-  ctx.restore()
 }
 
 function drawTrail(ctx: CanvasRenderingContext2D, trail: readonly Point[], color: string): void {
@@ -399,8 +351,13 @@ export function draw(ctx: CanvasRenderingContext2D, snapshot: Snapshot, theme: T
   if (g.wingman) drawTrail(ctx, g.wingman.trail, theme.ghost)
   drawTrail(ctx, g.trail, theme.accent)
 
-  if (g.wingman) drawPlane(ctx, g.wingman.plane, theme.ghost, theme.ghost)
-  drawPlane(ctx, g.plane, SCENE.planeRed, SCENE.planeRedShade)
+  if (g.wingman) {
+    ctx.save()
+    ctx.globalAlpha = WINGMAN_ALPHA
+    drawPlaneSprite(ctx, g.wingman.plane, WINGMAN_PALETTE, snapshot.t, theme.reducedMotion)
+    ctx.restore()
+  }
+  drawPlaneSprite(ctx, g.plane, PLAYER_PALETTE, snapshot.t, theme.reducedMotion)
 
   for (const ring of g.rings) if (ring.front) drawRing(ctx, ring, true)
 

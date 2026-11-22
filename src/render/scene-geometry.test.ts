@@ -7,7 +7,7 @@ import { CALM, createRun } from '../sim/run.ts'
 import type { TraceBuffer } from '../sim/trace.ts'
 import type { PlaneSnapshot, RingResult, Snapshot, Trace } from '../sim/types.ts'
 import { fixtureSnapshot } from './fixture.ts'
-import { FONT, LINE, PLANE_AT, altitudeY, sceneGeometry, scoreLabel, type SceneSize } from './scene-geometry.ts'
+import { FONT, LINE, PLANE_AT, SPRITE_PIXEL, altitudeY, sceneGeometry, scoreLabel, type SceneSize } from './scene-geometry.ts'
 
 const SIZE: SceneSize = { width: 1280, height: 720, dpr: 1 }
 const course = makeCourse(101)
@@ -137,6 +137,13 @@ describe('sceneGeometry: mid-flight', () => {
     const scored = snapshotWith(plane({ points: 12.34 }))
     expect(sceneGeometry(scored, SIZE).score).toBe('12.3')
     expect(scoreLabel(scored)).toBe('12.3 points')
+  })
+
+  it('keeps sprite pixels at the 3 px floor, which a small scene needs', () => {
+    expect(SPRITE_PIXEL).toBeGreaterThanOrEqual(3)
+    const small = sceneGeometry(snapshotWith(plane({})), { width: 584, height: 327, dpr: 1 }).plane.length
+    expect(Math.round(small / 26)).toBeGreaterThanOrEqual(1)
+    expect(Math.round(small / 26)).toBeLessThan(SPRITE_PIXEL)
   })
 
   it('tilts the plane nose-up when climbing', () => {
