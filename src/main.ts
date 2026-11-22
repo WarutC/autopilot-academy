@@ -15,6 +15,8 @@ import { createConditionsCard } from './ui/conditions-card.ts'
 import { createDrawer, PHONE_LANDSCAPE } from './ui/drawer.ts'
 import { createFlight, inFlight, pauseForInterruption, playerRuns, type Phase } from './ui/flight.ts'
 import { createStick, gameKey, typingTarget } from './ui/input.ts'
+import { createLogbookCard } from './ui/logbook-card.ts'
+import { createRunLogger } from './ui/logbook.ts'
 import { createModeSwitch } from './ui/mode-switch.ts'
 import { createPoleReadout, lessonAnalysis } from './ui/pole-readout.ts'
 import { browserStorage, validCourse } from './ui/persistence.ts'
@@ -72,7 +74,7 @@ recorderCard.append(recorderTitle, recorderBody)
 
 /** The address: `#/lesson/<id>?course=<n>`, rewritten after every lesson or course change. */
 const router = createRouter(window)
-/** The remembered lesson, modes, params and course, and the flight phase. */
+/** The remembered lesson, modes, params, course and best scores, the session's logbook and the flight phase. */
 const store = createStore(algorithms, browserStorage, { onRouteChange: (l, c) => router.write(l, c) })
 // On load the address wins over the remembered lesson and course.
 const route = parseRoute(router.read(), algorithms)
@@ -194,6 +196,13 @@ const wingmanCard = createWingmanCard(document, algorithms, store.wingman, {
 })
 side.append(wingmanCard.element)
 
+/** The session's newest flights; each ended run is logged once and may raise its lesson's best score. */
+const logbookCard = createLogbookCard(document, (id) => findAlgorithm(id)?.name)
+side.append(logbookCard.element)
+const logRun = createRunLogger(store)
+logbookCard.update(store.logbook)
+autopilotCard.setBests(store.best)
+
 /** Switches to another lesson outside a flight, from a chip or the address. */
 function selectLesson(id: string): void {
   const next = findAlgorithm(id)
@@ -301,11 +310,15 @@ let bannerPhase: Phase | undefined
 let bannerRun: Run | undefined
 let bannerCourse: number | undefined
 
-/** Reflects the flight into the toolbar and the banner; cheap, so it runs every frame. */
+/** Reflects the flight into the toolbar, the banner and the logbook; cheap, so it runs every frame. */
 function syncUi(): void {
   toolbar.update(flight.phase, flight.speed, store.course)
   autopilotCard.setPhase(flight.phase)
   wingmanCard.setPhase(flight.phase)
+  if (flight.phase === 'ended' && logRun(flight.run)) {
+    logbookCard.update(store.logbook)
+    autopilotCard.setBests(store.best)
+  }
   // The banner depends only on the phase, the run's result and a loaded course, so recompute it when one changes.
   if (flight.phase !== bannerPhase || flight.run !== bannerRun || loadedCourse !== bannerCourse) {
     bannerPhase = flight.phase

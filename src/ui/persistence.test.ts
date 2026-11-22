@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { algorithms, defaultParams } from '../algorithms/index.ts'
+import lqr from '../algorithms/lqr.ts'
 import manual from '../algorithms/manual.ts'
+import mpc from '../algorithms/mpc.ts'
 import p from '../algorithms/p.ts'
 import pid from '../algorithms/pid.ts'
 import { defaultConditions } from './conditions.ts'
 import {
   defaultSettings,
   loadSettings,
+  mergeBest,
   mergeParams,
   parseSettings,
   saveSettings,
@@ -43,6 +46,7 @@ describe('defaultSettings', () => {
       course: 101,
       conditions: defaultConditions(),
       wingman: null,
+      best: {},
     })
   })
 
@@ -162,6 +166,7 @@ describe('loadSettings and saveSettings', () => {
     course: 202,
     conditions: { ...defaultConditions(), down: 2.5, gusts: 4 },
     wingman: 'pid',
+    best: { pid: 87.4 },
   }
 
   it('round-trips through storage', () => {
@@ -230,5 +235,35 @@ describe('wingman setting', () => {
     saveSettings(fake.get, { ...defaultSettings(withP), wingman: 'p' })
     expect(JSON.parse(fake.items.get(STORAGE_KEY)!)).toMatchObject({ version: 1, wingman: 'p' })
     expect(loadSettings(fake.get, withP).wingman).toBe('p')
+  })
+})
+
+describe('best scores', () => {
+  const withMore = [manual, p, pid, lqr, mpc]
+
+  it('keeps finite numbers for registered lessons and drops everything else', () => {
+    const best = { pid: 87.4, ghost: 3, p: NaN, lqr: '9', mpc: Infinity }
+    expect(mergeBest(best, withMore)).toEqual({ pid: 87.4 })
+    // NaN and Infinity become null in JSON, which is dropped too.
+    expect(parseSettings(stored({ version: 1, best }), withMore).best).toEqual({ pid: 87.4 })
+  })
+
+  it.each([null, 3, 'best', [87.4]])('loads no best scores when best is %j', (best) => {
+    expect(parseSettings(stored({ version: 1, best }), modules).best).toEqual({})
+  })
+
+  it('round-trips the best scores through storage', () => {
+    const fake = fakeStorage()
+    saveSettings(fake.get, { ...defaultSettings(withMore), best: { pid: 87.4, p: 12 } })
+    expect(JSON.parse(fake.items.get(STORAGE_KEY)!)).toMatchObject({ version: 1, best: { pid: 87.4, p: 12 } })
+    expect(loadSettings(fake.get, withMore).best).toEqual({ pid: 87.4, p: 12 })
+  })
+
+  it('loads an older object without best with no best scores and keeps the rest', () => {
+    const s = parseSettings(stored({ version: 1, course: 202, wingman: 'pid', conditions: { gusts: 4 } }), modules)
+    expect(s.best).toEqual({})
+    expect(s.course).toBe(202)
+    expect(s.wingman).toBe('pid')
+    expect(s.conditions).toEqual({ ...defaultConditions(), gusts: 4 })
   })
 })

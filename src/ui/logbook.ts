@@ -1,5 +1,6 @@
 // The logbook model: the newest finished flights and the best score, kept as
-// plain data. Rows and eligibility come from `sim/scoring` alone.
+// plain data, and the logger that records each ended run once into their
+// owner. Rows and eligibility come from `sim/scoring` alone.
 
 import { isBestEligible, summarize, type LogEntry, type ScoredRun } from '../sim/scoring.ts'
 
@@ -39,4 +40,35 @@ export function appendRun(rows: readonly LogEntry[], run: ScoredRun, best: numbe
     nextBest = player.points
   }
   return { rows: [...fresh, ...rows].slice(0, LOGBOOK_SIZE), best: nextBest }
+}
+
+/** Something that holds the logbook rows and the best score per lesson; the store fits. */
+export interface LogbookOwner {
+  readonly logbook: readonly LogEntry[]
+  setLogbook(rows: readonly LogEntry[]): void
+  readonly best: Readonly<Record<string, number>>
+  setBest(id: string, points: number): void
+}
+
+/**
+ * A logger that records an ended run into `owner`: its rows through
+ * `appendRun`, and the player's lesson's best when it rises. Each run object is
+ * logged once; a run with a plane still flying, or without a player result, is
+ * skipped and not remembered, so a later call after it ends logs it. Returns
+ * true when it logged the run.
+ */
+export function createRunLogger(owner: LogbookOwner): (run: ScoredRun) => boolean {
+  let last: ScoredRun | undefined
+  return (run) => {
+    if (run === last) return false
+    const player = run.result('player')
+    const wingman = run.result('wingman')
+    if (!player || player.status === 'flying' || wingman?.status === 'flying') return false
+    last = run
+    const before = owner.best[player.lesson]
+    const next = appendRun(owner.logbook, run, before)
+    owner.setLogbook(next.rows)
+    if (next.best !== undefined && next.best !== before) owner.setBest(player.lesson, next.best)
+    return true
+  }
 }

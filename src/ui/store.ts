@@ -1,8 +1,10 @@
 // The player's settings and the flight phase. The store is the only writer of
 // settings: it loads them once, validates every change and writes each one
-// through to storage. The phase lives here too but is never saved.
+// through to storage. Best scores are settings too. The phase and the
+// session's logbook live here as well but are never saved.
 
 import type { AlgorithmModule, Params } from '../algorithms/index.ts'
+import type { LogEntry } from '../sim/scoring.ts'
 import type { Conditions, FlightMode } from '../sim/types.ts'
 import { clampCondition } from './conditions.ts'
 import { clampValue } from './params.ts'
@@ -49,6 +51,14 @@ export interface Store extends PhaseOwner {
   readonly wingman: string | null
   /** Sets the wingman; an id that is not a registered lesson offering Autopilot is ignored. */
   setWingman(id: string | null): void
+  /** This session's logbook rows, newest first; never saved, empty on every load. */
+  readonly logbook: readonly LogEntry[]
+  /** Replaces the logbook rows with a copy of `rows`. */
+  setLogbook(rows: readonly LogEntry[]): void
+  /** The best score per lesson; a record handed out is never changed later. */
+  readonly best: Readonly<Record<string, number>>
+  /** Sets the lesson's best score; an unregistered lesson or a non-finite value is ignored. */
+  setBest(id: string, points: number): void
 }
 
 /** A lesson's mode until the player picks another: Autopilot when it has one, else its first mode. */
@@ -69,6 +79,7 @@ export function createStore(
   const phase = createPhase()
   let settings: Settings = loadSettings(getStorage, modules)
   const find = (id: string) => modules.find((m) => m.id === id)
+  let logbook: readonly LogEntry[] = []
 
   function update(next: Partial<Settings>): void {
     settings = { ...settings, ...next }
@@ -139,6 +150,20 @@ export function createStore(
       if (id !== null && !validWingman(id, modules)) return
       if (id === settings.wingman) return
       update({ wingman: id })
+    },
+    get logbook() {
+      return logbook
+    },
+    setLogbook(rows) {
+      logbook = rows.slice()
+    },
+    get best() {
+      return settings.best
+    },
+    setBest(id, points) {
+      if (!find(id) || typeof points !== 'number' || !Number.isFinite(points)) return
+      if (settings.best[id] === points) return
+      update({ best: { ...settings.best, [id]: points } })
     },
   }
 }

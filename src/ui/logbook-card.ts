@@ -47,6 +47,10 @@ export function createLogbookCard(doc: Document, nameOf: (lesson: string) => str
 
   const body = doc.createElement('div')
   body.className = 'card-body logbook-body'
+  // The table can scroll sideways on a narrow screen, so the body takes focus to scroll by keyboard.
+  body.tabIndex = 0
+  body.setAttribute('role', 'region')
+  body.setAttribute('aria-labelledby', 'logbook-title')
   element.append(header, body)
 
   function cell(tag: 'td' | 'th', text: string): HTMLElement {

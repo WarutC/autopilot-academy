@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LogEntry, PlaneResult, ScoredRun } from '../sim/scoring.ts'
-import { LOGBOOK_SIZE, appendRun } from './logbook.ts'
+import { LOGBOOK_SIZE, appendRun, createRunLogger, type LogbookOwner } from './logbook.ts'
 
 const result = (over: Partial<PlaneResult> = {}): PlaneResult => ({
   lesson: 'pid',
@@ -84,5 +84,98 @@ describe('appendRun', () => {
     expect(keep(result({ mode: 'semi-auto', points: 90 }))).toBe(40)
     expect(keep(result({ points: 10 }), result({ points: 90 }))).toBe(40)
     expect(appendRun([], runOf(result({ status: 'crashed' })), undefined).best).toBeUndefined()
+  })
+})
+
+/** An in-memory logbook owner that counts its writes. */
+function owner(best: Record<string, number> = {}) {
+  const state = {
+    logbook: [] as readonly LogEntry[],
+    best: { ...best } as Record<string, number>,
+    logWrites: 0,
+    bestWrites: 0,
+  }
+  const o: LogbookOwner = {
+    get logbook() {
+      return state.logbook
+    },
+    setLogbook(rows) {
+      state.logbook = rows.slice()
+      state.logWrites++
+    },
+    get best() {
+      return state.best
+    },
+    setBest(id, points) {
+      state.best = { ...state.best, [id]: points }
+      state.bestWrites++
+    },
+  }
+  return { o, state }
+}
+
+describe('createRunLogger', () => {
+  it('logs an ended run: the player row, then the wingman row', () => {
+    const { o, state } = owner()
+    const log = createRunLogger(o)
+    expect(log(runOf(result(), result({ lesson: 'p', status: 'crashed' })))).toBe(true)
+    expect(state.logbook.map((r) => r.lesson)).toEqual(['pid', 'p'])
+    expect(state.logbook[1]!.tags).toContain('wingman')
+  })
+
+  it('logs the same run object once', () => {
+    const { o, state } = owner()
+    const log = createRunLogger(o)
+    const run = runOf(result())
+    expect(log(run)).toBe(true)
+    expect(log(run)).toBe(false)
+    expect(log(run)).toBe(false)
+    expect(state.logbook).toHaveLength(1)
+    expect(state.logWrites).toBe(1)
+    expect(state.bestWrites).toBe(1)
+  })
+
+  it('skips a run while a plane is flying and logs it once it ends', () => {
+    const { o, state } = owner()
+    const log = createRunLogger(o)
+    let wingmanStatus: PlaneResult['status'] = 'flying'
+    const run: ScoredRun = {
+      result: (plane) => (plane === 'player' ? result() : result({ lesson: 'p', status: wingmanStatus })),
+    }
+    expect(log(run)).toBe(false)
+    expect(log(runOf(result({ status: 'flying' })))).toBe(false)
+    expect(log(runOf(undefined))).toBe(false)
+    expect(state.logWrites).toBe(0)
+    wingmanStatus = 'finished'
+    expect(log(run)).toBe(true)
+    expect(state.logbook.map((r) => r.lesson)).toEqual(['pid', 'p'])
+  })
+
+  it('raises the best for an eligible higher score', () => {
+    const { o, state } = owner({ pid: 70 })
+    createRunLogger(o)(runOf(result({ points: 80 })))
+    expect(state.best).toEqual({ pid: 80 })
+  })
+
+  it('keeps the best for an ineligible or lower run but still logs its row', () => {
+    for (const r of [
+      result({ points: 90, mode: 'semi-auto' }),
+      result({ points: 90, retuned: true }),
+      result({ points: 90, status: 'crashed' }),
+      result({ points: 70 }),
+      result({ points: 60 }),
+    ]) {
+      const { o, state } = owner({ pid: 70 })
+      expect(createRunLogger(o)(runOf(r))).toBe(true)
+      expect(state.logbook).toHaveLength(1)
+      expect(state.best).toEqual({ pid: 70 })
+      expect(state.bestWrites).toBe(0)
+    }
+  })
+
+  it('never lets the wingman raise a best', () => {
+    const { o, state } = owner()
+    createRunLogger(o)(runOf(result({ mode: 'semi-auto' }), result({ lesson: 'p', points: 99 })))
+    expect(state.best).toEqual({})
   })
 })

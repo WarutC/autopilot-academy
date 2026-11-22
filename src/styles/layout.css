@@ -182,6 +182,57 @@ body {
   color: var(--muted);
 }
 
+/* The Logbook card: a table of the newest flights, scrolling sideways in a narrow column. */
+.logbook-body {
+  overflow-x: auto;
+}
+
+.logbook-empty {
+  margin: 0;
+  font: var(--type-body);
+  color: var(--muted);
+}
+
+.logbook-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: var(--type-number);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.logbook-table th,
+.logbook-table td {
+  padding: 4px 6px;
+  border-bottom: 2px solid var(--line);
+  text-align: right;
+  vertical-align: top;
+}
+
+.logbook-table th {
+  font: var(--type-label);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.logbook-table th:first-child,
+.logbook-table td:first-child {
+  text-align: left;
+}
+
+.logbook-table td:not(:first-child) {
+  white-space: nowrap;
+}
+
+.logbook-tag {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font: 400 18px/1.2 var(--font-condensed);
+  color: var(--muted);
+}
+
 /* The scene and the banner over it. */
 .stage {
   position: relative;
@@ -548,7 +599,8 @@ body {
 .lesson-chip:focus-visible,
 .stick-btn:focus-visible,
 .scene:focus-visible,
-.setpoint-input:focus-visible {
+.setpoint-input:focus-visible,
+.logbook-body:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
   box-shadow: 0 0 0 7px var(--focus-halo);

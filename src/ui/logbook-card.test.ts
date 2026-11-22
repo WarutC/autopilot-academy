@@ -7,6 +7,7 @@ class FakeElement {
   className = ''
   id = ''
   hidden = false
+  tabIndex = -1
   readonly attrs = new Map<string, string>()
   children: Array<FakeElement | string> = []
   private text = ''
@@ -74,6 +75,10 @@ describe('createLogbookCard', () => {
     const body = byClass('card-body')[0]!
     expect(body.children).toHaveLength(1)
     expect(body.textContent).toBe(EMPTY_LOGBOOK)
+    // A focusable, labelled region, so the keyboard can scroll a wide table.
+    expect(body.tabIndex).toBe(0)
+    expect(body.getAttribute('role')).toBe('region')
+    expect(body.getAttribute('aria-labelledby')).toBe(header.id)
     expect(EMPTY_LOGBOOK).toBe(
       "Finished flights appear here. Best scores only count finished Autopilot or Manual flights you didn't retune.",
     )

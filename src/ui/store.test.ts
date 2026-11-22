@@ -3,6 +3,7 @@ import { defaultParams } from '../algorithms/index.ts'
 import manual from '../algorithms/manual.ts'
 import p from '../algorithms/p.ts'
 import pid from '../algorithms/pid.ts'
+import type { LogEntry } from '../sim/scoring.ts'
 import { defaultConditions } from './conditions.ts'
 import { STORAGE_KEY, type StorageGetter } from './persistence.ts'
 import { createPhase, createStore } from './store.ts'
@@ -222,5 +223,60 @@ describe('store wingman', () => {
     })
     store.setWingman('p')
     expect(store.wingman).toBe('p')
+  })
+})
+
+describe('Store best scores and logbook', () => {
+  const row = (lesson: string): LogEntry => ({
+    lesson,
+    mode: 'autopilot',
+    course: 101,
+    points: 50,
+    rings: 10,
+    ringsTotal: 10,
+    iae: 100,
+    energy: 2,
+    tags: [],
+  })
+
+  it('starts with no best scores and an empty logbook', () => {
+    const store = createStore(modules, fakeStorage().get)
+    expect(store.best).toEqual({})
+    expect(store.logbook).toEqual([])
+  })
+
+  it('saves a best score and restores it after a reload', () => {
+    const fake = fakeStorage()
+    const store = createStore(modules, fake.get)
+    const before = store.best
+    store.setBest('pid', 87.4)
+    expect(store.best).toEqual({ pid: 87.4 })
+    expect(before).toEqual({})
+    expect(JSON.parse(fake.items.get(STORAGE_KEY)!).best).toEqual({ pid: 87.4 })
+    expect(createStore(modules, fake.get).best).toEqual({ pid: 87.4 })
+  })
+
+  it('ignores an unregistered lesson or a non-finite value', () => {
+    const fake = fakeStorage()
+    const store = createStore(modules, fake.get)
+    store.setBest('ghost', 10)
+    store.setBest('pid', NaN)
+    store.setBest('pid', Infinity)
+    expect(store.best).toEqual({})
+    expect(fake.items.has(STORAGE_KEY)).toBe(false)
+  })
+
+  it('keeps the logbook as a copy in memory, never saved and empty after a reload', () => {
+    const fake = fakeStorage()
+    const store = createStore(modules, fake.get)
+    const rows = [row('pid'), row('p')]
+    store.setLogbook(rows)
+    rows.pop()
+    expect(store.logbook.map((r) => r.lesson)).toEqual(['pid', 'p'])
+    store.setCourse(202)
+    expect(JSON.parse(fake.items.get(STORAGE_KEY)!)).not.toHaveProperty('logbook')
+    const reloaded = createStore(modules, fake.get)
+    expect(reloaded.logbook).toEqual([])
+    expect(reloaded.course).toBe(202)
   })
 })
