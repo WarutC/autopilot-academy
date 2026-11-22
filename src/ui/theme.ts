@@ -30,8 +30,8 @@ export interface Theme extends ThemeTokens {
   readonly reducedMotion: boolean
 }
 
-/** The light theme, used for any token the page does not define. */
-export const LIGHT: Theme = {
+/** The light theme's string tokens, used for any token the page does not define. */
+const LIGHT_TOKENS: ThemeTokens = {
   bg: '#E7EEF5',
   ink: '#13294B',
   muted: '#4C617D',
@@ -51,11 +51,13 @@ export const LIGHT: Theme = {
   focus: '#F5B700',
   fontCondensed: "'Barlow Condensed', 'Arial Narrow', Barlow, sans-serif",
   fontBody: "Barlow, 'Segoe UI', system-ui, sans-serif",
-  reducedMotion: false,
 }
 
+/** The light theme, with full motion. */
+export const LIGHT: Theme = { ...LIGHT_TOKENS, reducedMotion: false }
+
 /** Every string token, in `LIGHT` order. */
-export const TOKEN_KEYS: readonly (keyof ThemeTokens)[] = Object.keys(LIGHT).filter((key) => key !== 'reducedMotion') as (keyof ThemeTokens)[]
+export const TOKEN_KEYS = Object.keys(LIGHT_TOKENS) as readonly (keyof ThemeTokens)[]
 
 const DARK_QUERY = '(prefers-color-scheme: dark)'
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
@@ -98,8 +100,13 @@ export function loadTheme(root: Element = document.documentElement): Theme {
   return readTheme((name) => style.getPropertyValue(name), prefersReducedMotion())
 }
 
-/** Calls `onChange` when the system switches between light and dark or toggles reduced motion; returns an unsubscribe. */
+/**
+ * Calls `onChange` when the system switches between light and dark or toggles
+ * reduced motion; returns an unsubscribe. Watches nothing where `matchMedia`
+ * is missing.
+ */
 export function watchTheme(onChange: () => void): () => void {
+  if (typeof matchMedia !== 'function') return () => {}
   const queries = [matchMedia(DARK_QUERY), matchMedia(REDUCED_MOTION_QUERY)]
   const listener = (): void => onChange()
   for (const query of queries) query.addEventListener('change', listener)

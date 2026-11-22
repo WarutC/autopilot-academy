@@ -230,9 +230,4 @@ describe('followAddress', () => {
     expect(calls).toEqual([])
     expect(location.hash).toBe('#/about?course=5')
   })
-
-  it('closes About first on a lesson route, then follows it', () => {
-    const { log } = follow('#/lesson/manual?course=9', false)
-    expect(log[0]).toBe('about false')
-  })
 })

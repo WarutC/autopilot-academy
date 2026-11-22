@@ -127,4 +127,10 @@ describe('watchTheme', () => {
     expect(removed[DARK]).toEqual(added[DARK])
     expect(removed[REDUCE]).toEqual(added[REDUCE])
   })
+
+  it('watches nothing, and unsubscribes safely, where matchMedia is missing', () => {
+    vi.stubGlobal('matchMedia', undefined)
+    const stop = watchTheme(() => {})
+    expect(() => stop()).not.toThrow()
+  })
 })
