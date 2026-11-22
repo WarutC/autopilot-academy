@@ -1,157 +1,48 @@
-// The flight recorder plot: the target (dashed), the altitude flown, and a
-// labeled vertical marker for every parameter change. `recorderGeometry` is
-// pure; `draw` only strokes and fills what it returns.
+// Paints the flight recorder: a legend, the target (dashed), the altitude
+// flown, ring bars colored by result, the elevator command in a lower band,
+// and a labeled vertical marker for every parameter change. Geometry comes
+// from `recorderGeometry`; this only strokes and fills what it returns.
 
-import { END_PAST_LAST_RING, refAt, ringBounds, type Course } from '../sim/course.ts'
-import { PLANT } from '../sim/plant.ts'
-import type { Ring, Snapshot } from '../sim/types.ts'
+import type { Snapshot } from '../sim/types.ts'
 import type { Theme } from '../ui/theme.ts'
-import { TARGET_DASH, type Point, type SceneSize } from './scene-geometry.ts'
+import { RECORDER_FONT, RECORDER_LINE, recorderGeometry, type LegendKey, type RingBar } from './recorder-geometry.ts'
+import { SCENE } from './scene.ts'
+import { TARGET_DASH, type Point, type RingState, type SceneSize } from './scene-geometry.ts'
 
-/** Stroke widths in CSS px. Plot lines hold the 3 px floor; the grid is a hairline. */
-export const RECORDER_LINE = {
-  target: 3,
-  altitude: 3,
-  marker: 3,
-  axis: 1,
-} as const
-
-/** Text sizes in CSS px; none is below the 18 px floor. */
-export const RECORDER_FONT = {
-  marker: 18,
-  axis: 18,
-} as const
-
-/** Space around the plot for the axis labels, CSS px. */
-export const PAD = { left: 48, right: 12, top: 8, bottom: 8 } as const
-
-/** Height of one marker label row, CSS px. */
-export const MARKER_ROW = 24
-
-/** Gap kept between two labels on one row, CSS px. */
-const LABEL_GAP = 8
-
-/** Course time between samples of the target ahead of the plane, s. */
-const TARGET_STEP_T = 0.1
-
-/** Text width estimate per character at the marker font, CSS px. */
-const CHAR_WIDTH = 0.56 * RECORDER_FONT.marker
-
-export interface MarkerShape {
-  readonly x: number
-  /** Top and bottom of the vertical line, CSS px. */
-  readonly y0: number
-  readonly y1: number
-  readonly label: string
-  /** Left edge and baseline of the label, CSS px. */
-  readonly labelX: number
-  readonly labelY: number
-  readonly row: number
-}
-
-export interface RecorderGeometry {
-  readonly width: number
-  readonly height: number
-  /** The plot area, CSS px. */
-  readonly plot: { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number }
-  /** Course time at the right edge, s. */
-  readonly tEnd: number
-  readonly target: readonly Point[]
-  readonly altitude: readonly Point[]
-  readonly markers: readonly MarkerShape[]
-  /** Altitude grid values with their y, CSS px. */
-  readonly ticks: readonly { readonly h: number; readonly y: number }[]
-}
-
-function courseOf(snapshot: Snapshot): Course {
-  const rings: readonly Ring[] = snapshot.rings
-  const endX = rings.length > 0 ? rings[rings.length - 1].x + END_PAST_LAST_RING : 0
-  return { number: snapshot.course, rings, bounds: ringBounds(rings), endX }
-}
-
-/** Estimated width of `text` at the marker font, CSS px; `measure` overrides it. */
-export function labelWidth(text: string, measure?: (text: string) => number): number {
-  const w = measure?.(text)
-  return typeof w === 'number' && Number.isFinite(w) && w >= 0 ? w : text.length * CHAR_WIDTH
-}
-
-/**
- * Everything the recorder draws, for `snapshot` on a canvas `size` CSS px.
- * x spans t = 0 to the course end; y spans the safe band. Labels that would
- * overlap move down a row.
- */
-export function recorderGeometry(
-  snapshot: Snapshot,
-  size: SceneSize,
-  measure?: (text: string) => number,
-): RecorderGeometry {
-  const W = size.width
-  const H = size.height
-  const course = courseOf(snapshot)
-  const tEnd = course.endX > 0 ? course.endX / PLANT.speed : 1
-  const plot = { left: PAD.left, top: PAD.top, right: Math.max(PAD.left, W - PAD.right), bottom: Math.max(PAD.top, H - PAD.bottom) }
-  const X = (t: number): number => plot.left + (t / tEnd) * (plot.right - plot.left)
-  const Y = (h: number): number =>
-    plot.bottom - ((h - PLANT.hFloor) / (PLANT.hCeil - PLANT.hFloor)) * (plot.bottom - plot.top)
-
-  const trace = snapshot.trace.player
-  const n = trace?.length ?? 0
-
-  const target: Point[] = []
-  const altitude: Point[] = []
-  let tFlown = 0
-  if (trace && n > 0) {
-    for (let i = 0; i < n; i++) {
-      target.push({ x: X(trace.t[i]), y: Y(trace.ref[i]) })
-      altitude.push({ x: X(trace.t[i]), y: Y(trace.h[i]) })
-    }
-    tFlown = trace.t[n - 1]
-  }
-  // The rest of the reference: from the rings, or flat at the player's
-  // setpoint in Semi-auto.
-  const player = snapshot.planes.find((p) => p.id === 'player')
-  const setpoint = player?.mode === 'semi-auto' ? player.ref : undefined
-  const refFor = (x: number): number => setpoint ?? refAt(course, x)
-  if (course.endX > 0) {
-    const from = n > 0 ? tFlown + TARGET_STEP_T : 0
-    for (let t = from; t < tEnd; t += TARGET_STEP_T) target.push({ x: X(t), y: Y(refFor(PLANT.speed * t)) })
-    target.push({ x: X(tEnd), y: Y(refFor(course.endX)) })
-  }
-
-  const markers: MarkerShape[] = []
-  /** Lowest label row whose baseline stays inside the plot; later labels share it. */
-  const lastRow = Math.max(0, Math.floor((plot.bottom - plot.top - RECORDER_FONT.marker) / MARKER_ROW))
-  /** Right edge of the last label on each row. */
-  const rowEnds: number[] = []
-  for (const m of snapshot.markers) {
-    if (!Number.isFinite(m.t) || m.label === '') continue
-    const x = X(Math.min(Math.max(0, m.t), tEnd))
-    const w = labelWidth(m.label, measure)
-    // Keep the label on the canvas: right of the line, or left of it near the edge.
-    const labelX = x + 6 + w <= W ? x + 6 : Math.max(0, x - 6 - w)
-    let row = 0
-    while (row < lastRow && row < rowEnds.length && labelX < rowEnds[row] + LABEL_GAP) row++
-    rowEnds[row] = labelX + w
-    markers.push({
-      x,
-      y0: plot.top,
-      y1: plot.bottom,
-      label: m.label,
-      labelX,
-      labelY: plot.top + RECORDER_FONT.marker + row * MARKER_ROW,
-      row,
-    })
-  }
-
-  const ticks = [20, 50, 80, 110].map((h) => ({ h, y: Y(h) }))
-
-  return { width: W, height: H, plot, tEnd, target, altitude, markers, ticks }
+const RING_BAR_COLOR: Record<RingState, string> = {
+  pending: SCENE.ringGold,
+  pass: SCENE.ringHit,
+  miss: SCENE.ringMiss,
 }
 
 function polyline(ctx: CanvasRenderingContext2D, points: readonly Point[]): void {
   ctx.beginPath()
   points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)))
   ctx.stroke()
+}
+
+function hline(ctx: CanvasRenderingContext2D, x0: number, x1: number, y: number): void {
+  ctx.beginPath()
+  ctx.moveTo(x0, y)
+  ctx.lineTo(x1, y)
+  ctx.stroke()
+}
+
+/** A passed or pending ring is a filled bar; a missed ring is a hollow outline. */
+function drawRingBar(ctx: CanvasRenderingContext2D, bar: RingBar): void {
+  const color = RING_BAR_COLOR[bar.state]
+  const left = bar.x - bar.width / 2
+  const height = bar.bottom - bar.top
+  if (bar.state === 'miss') {
+    // Inset by half the stroke so the outline keeps the bar's outer size.
+    const inset = RECORDER_LINE.ringMiss / 2
+    ctx.lineWidth = RECORDER_LINE.ringMiss
+    ctx.strokeStyle = color
+    ctx.strokeRect(left + inset, bar.top + inset, Math.max(0, bar.width - 2 * inset), Math.max(0, height - 2 * inset))
+  } else {
+    ctx.fillStyle = color
+    ctx.fillRect(left, bar.top, bar.width, height)
+  }
 }
 
 /** Paints the recorder for `snapshot` into `ctx`, whose backing store is `size` CSS px at `size.dpr`. Never writes to the snapshot. */
@@ -170,7 +61,7 @@ export function draw(ctx: CanvasRenderingContext2D, snapshot: Snapshot, theme: T
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
 
-  // Altitude grid and labels.
+  // Altitude grid, the elevator band grid, and their labels.
   ctx.lineWidth = RECORDER_LINE.axis
   ctx.strokeStyle = theme.line
   ctx.fillStyle = theme.muted
@@ -178,12 +69,13 @@ export function draw(ctx: CanvasRenderingContext2D, snapshot: Snapshot, theme: T
   ctx.textAlign = 'right'
   ctx.textBaseline = 'middle'
   for (const tick of g.ticks) {
-    ctx.beginPath()
-    ctx.moveTo(g.plot.left, tick.y)
-    ctx.lineTo(g.plot.right, tick.y)
-    ctx.stroke()
+    hline(ctx, g.plot.left, g.plot.right, tick.y)
     ctx.fillText(String(tick.h), g.plot.left - 8, Math.max(RECORDER_FONT.axis / 2, tick.y))
   }
+  for (const y of [g.band.top, g.band.mid, g.band.bottom]) hline(ctx, g.plot.left, g.plot.right, y)
+  ctx.fillText('u', g.plot.left - 8, g.band.mid)
+
+  for (const bar of g.ringBars) drawRingBar(ctx, bar)
 
   if (g.target.length >= 2) {
     ctx.save()
@@ -199,6 +91,12 @@ export function draw(ctx: CanvasRenderingContext2D, snapshot: Snapshot, theme: T
     ctx.lineWidth = RECORDER_LINE.altitude
     ctx.strokeStyle = theme.accent
     polyline(ctx, g.altitude)
+  }
+
+  if (g.elevator.length >= 2) {
+    ctx.lineWidth = RECORDER_LINE.elevator
+    ctx.strokeStyle = theme.muted
+    polyline(ctx, g.elevator)
   }
 
   ctx.font = `500 ${RECORDER_FONT.marker}px ${theme.fontBody}`
@@ -217,5 +115,28 @@ export function draw(ctx: CanvasRenderingContext2D, snapshot: Snapshot, theme: T
     ctx.strokeText(m.label, m.labelX, m.labelY)
     ctx.fillStyle = theme.ink
     ctx.fillText(m.label, m.labelX, m.labelY)
+  }
+
+  // Legend: a swatch line in each line's own color and style, then its label.
+  const swatchColor: Record<LegendKey, string> = {
+    target: theme.refline,
+    altitude: theme.accent,
+    elevator: theme.muted,
+  }
+  ctx.font = `500 ${RECORDER_FONT.legend}px ${theme.fontBody}`
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'middle'
+  for (const entry of g.legend) {
+    ctx.save()
+    if (entry.dashed) {
+      ctx.setLineDash(TARGET_DASH as number[])
+      ctx.lineCap = 'butt'
+    }
+    ctx.lineWidth = RECORDER_LINE.swatch
+    ctx.strokeStyle = swatchColor[entry.key]
+    hline(ctx, entry.swatchX0, entry.swatchX1, entry.y)
+    ctx.restore()
+    ctx.fillStyle = theme.ink
+    ctx.fillText(entry.label, entry.x, entry.y)
   }
 }

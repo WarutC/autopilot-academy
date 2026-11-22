@@ -44,7 +44,7 @@ main.append(stage)
 const recorderCanvas = document.createElement('canvas')
 recorderCanvas.className = 'recorder'
 recorderCanvas.setAttribute('role', 'img')
-recorderCanvas.setAttribute('aria-label', 'Flight recorder: target and altitude over time, with a marker at each parameter change')
+recorderCanvas.setAttribute('aria-label', 'Flight recorder: target, altitude and elevator over time, ring results, and a marker at each parameter change')
 const recorderCtx = recorderCanvas.getContext('2d')!
 const recorderCard = document.createElement('section')
 recorderCard.className = 'card recorder-card'
