@@ -183,7 +183,7 @@ export function createAutopilotCard(
     const slider = doc.createElement('input')
     slider.type = 'range'
     slider.className = 'param-slider'
-    slider.setAttribute('aria-label', spec.accessibleName)
+    slider.setAttribute('aria-label', `${spec.accessibleName}, slider`)
     const range = sliderRange(spec)
     slider.min = String(range.min)
     slider.max = String(range.max)

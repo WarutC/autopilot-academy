@@ -70,6 +70,14 @@ describe('clampValue', () => {
     expect(clampValue(Q, 0.013)).toBe(0.01)
   })
 
+  it('reads a decimal comma as a decimal point', () => {
+    expect(parseNumber('0,05')).toBe(0.05)
+    expect(parseNumber(' 1,5 ')).toBe(1.5)
+    expect(parseNumber('0.05')).toBe(0.05)
+    expect(parseNumber('1,2,3')).toBeNaN()
+    expect(parseNumber('1.2,3')).toBeNaN()
+  })
+
   it('gives undefined for NaN', () => {
     expect(clampValue(Kd, NaN)).toBeUndefined()
     expect(clampValue(Kd, parseNumber('abc'))).toBeUndefined()

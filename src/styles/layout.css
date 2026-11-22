@@ -28,7 +28,7 @@ body {
 }
 
 /* Below the wide layout the header is hidden but the h1 stays for screen readers. */
-@media (max-width: 960px) {
+@media (width <= 960px) {
   .site-header {
     position: absolute;
     width: 1px;
@@ -228,7 +228,7 @@ body {
   margin: 0;
 }
 
-@media (min-width: 961px) {
+@media (width > 960px) {
   .layout {
     grid-template-columns: minmax(0, 1fr) 380px;
   }
@@ -474,15 +474,15 @@ body {
 
 /*
  * The setpoint slider over the scene's right edge, in Semi-auto. Its track
- * runs from 5% down to 8% up the scene, roughly the 110 m to 6 m span of
+ * runs from 10.85% down to 13.87% up the scene, the 103 m to 13 m span of
  * its altitude scale, so the plane thumb sits near the dashed target line
  * (a native thumb stops half its size short of each end). It stays left of
  * the score badge column (16 px inset + 92 px badge + 16 px gap).
  */
 .setpoint {
   position: absolute;
-  top: 5%;
-  bottom: 8%;
+  top: 10.85%;
+  bottom: 13.87%;
   right: 124px;
   display: flex;
   justify-content: center;

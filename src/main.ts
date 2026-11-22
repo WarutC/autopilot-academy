@@ -3,14 +3,14 @@ import './styles/layout.css'
 import { algorithms, findAlgorithm, type AlgorithmModule } from './algorithms/index.ts'
 import { draw as drawRecorder } from './render/recorder.ts'
 import { draw as drawScene } from './render/scene.ts'
-import { PLANT } from './sim/plant.ts'
+import { PLANT, SETPOINT_MAX, SETPOINT_MIN } from './sim/plant.ts'
 import { createRun, type Run, type RunPlayer } from './sim/run.ts'
 import type { FlightMode, Snapshot } from './sim/types.ts'
 import { watchAutoPause } from './ui/auto-pause.ts'
 import { createAutopilotCard } from './ui/autopilot-card.ts'
 import { bannerContent, createBanner } from './ui/banner.ts'
 import { createDrawer, PHONE_LANDSCAPE } from './ui/drawer.ts'
-import { createFlight, inFlight, type Phase } from './ui/flight.ts'
+import { createFlight, inFlight, pauseForInterruption, type Phase } from './ui/flight.ts'
 import { createStick, gameKey, typingTarget } from './ui/input.ts'
 import { createModeSwitch } from './ui/mode-switch.ts'
 import { browserStorage, validCourse } from './ui/persistence.ts'
@@ -21,6 +21,7 @@ import { createStickButtons } from './ui/stick-buttons.ts'
 import { createStore } from './ui/store.ts'
 import { loadTheme, watchTheme } from './ui/theme.ts'
 import { createToolbar } from './ui/toolbar.ts'
+import { createTuningHandlers } from './ui/tuning.ts'
 
 const canvas = document.createElement('canvas')
 canvas.className = 'scene'
@@ -108,7 +109,7 @@ stickButtons.setVisible(flysByHand(lesson))
 
 const setpointSlider = createSetpointSlider(
   document,
-  { min: PLANT.hFloor, max: PLANT.hCeil, step: 1, value: setpoint },
+  { min: SETPOINT_MIN, max: SETPOINT_MAX, step: 1, value: setpoint },
   (value) => {
     setpoint = value
     // A finished run keeps the target it flew; the next Fly picks the setpoint up.
@@ -140,18 +141,15 @@ function syncMode(): void {
 syncMode()
 
 const autopilotCard = createAutopilotCard(document, algorithms, lesson.id, player.params, {
-  change(key, value) {
-    // The store hands out a new record each time, so a finished run's params are never touched.
-    store.setParam(lesson.id, key, value)
-    player = { ...player, params: store.params(lesson.id) }
-    if (inFlight(flight.phase)) flight.run.setParam('player', key, player.params[key] ?? value)
-  },
-  commit(label) {
-    if (inFlight(flight.phase)) {
-      flight.run.markChange(label)
-      requestDraw()
-    }
-  },
+  ...createTuningHandlers({
+    store,
+    flight,
+    lesson: () => lesson.id,
+    setParams(params) {
+      player = { ...player, params }
+    },
+    marked: requestDraw,
+  }),
   select: selectLesson,
 })
 side.append(autopilotCard.element)
@@ -210,19 +208,16 @@ const toolbar = createToolbar(document, {
 toolbar.element.prepend(modeSwitch.element)
 main.append(toolbar.element, recorderCard)
 
-/** Releases the stick and pauses a running flight, so the Paused banner shows; any other phase is left as it is. */
+/** Releases the stick and pauses a running flight, so the Paused banner shows. */
 function releaseAndPause(): void {
-  stick.releaseAll()
-  if (flight.phase === 'running') {
-    flight.togglePause()
-    syncUi()
-  }
+  if (pauseForInterruption(flight, stick)) syncUi()
   requestDraw()
 }
 
 // Phone landscape: the cards open as a drawer from the right, and opening it releases the stick and pauses the run.
 const drawer = createDrawer(document, {
   panel: side,
+  background: main,
   onOpen: releaseAndPause,
 })
 toolbar.element.querySelector('.seg:not(.mode-switch)')!.after(drawer.toggle)
@@ -230,7 +225,7 @@ side.prepend(drawer.close)
 app.append(drawer.scrim)
 
 // On a phone a tap on the recorder expands it to the full viewport width.
-const phoneQuery = `(max-width: 960px), ${PHONE_LANDSCAPE}`
+const phoneQuery = `(width <= 960px), ${PHONE_LANDSCAPE}`
 recorderCanvas.addEventListener('click', () => {
   if (matchMedia(phoneQuery).matches) recorderCard.classList.toggle('expanded')
 })

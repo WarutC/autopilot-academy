@@ -11,6 +11,10 @@ describe('manual', () => {
     for (const input of [-1, 0, 1] as const) expect(controller.compute(ctx(input))).toBe(input)
   })
 
+  it('names every stick control in its lesson', () => {
+    for (const control of ['▲ / ▼', '↑ / ↓', 'W / S']) expect(manual.lesson).toContain(control)
+  })
+
   it('flies in Manual mode only, with no parameters', () => {
     expect(manual.modes).toEqual(['manual'])
     expect(manual.params).toEqual([])

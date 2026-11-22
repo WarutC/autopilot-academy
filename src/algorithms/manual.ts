@@ -7,8 +7,8 @@ const manual: AlgorithmModule = {
   name: 'Manual',
   tag: 'By hand',
   lesson:
-    'Fly it yourself. Hold ▲ / ▼ to climb and dive through each ring; release and the elevator returns to neutral. ' +
-    'Try: fly course 101 by hand, then fly PID on it and compare the two altitude lines on the recorder.',
+    'Fly it yourself. Hold ▲ / ▼, the ↑ / ↓ keys or W / S to climb and dive through each ring; release and the elevator returns to neutral. ' +
+    'Try: fly course 101 by hand, then watch the altitude line on the recorder to see how far you overshoot each ring.',
   modes: ['manual'],
   params: [],
   create() {

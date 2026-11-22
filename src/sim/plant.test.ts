@@ -13,7 +13,8 @@ function prototypeStep(s: { h: number; v: number; x: number; t: number }, u: num
 const prototypeInBand = (h: number) => !(h < 6 || h > 110)
 
 describe('PLANT', () => {
-  it('uses the prototype constants with the tuned damping', () => {
+  // Pinned because the course, the PID defaults and the scoring are tuned against these values.
+  it('pins the tuned constants (a = 0.5)', () => {
     expect(PLANT).toEqual({
       a: 0.5, b: 20, speed: 20, ringGap: 160, ringR: 7, nRings: 10,
       hFloor: 6, hCeil: 110, hStart: 50, dt: 0.005, Tc: 0.02,

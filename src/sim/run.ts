@@ -3,7 +3,7 @@
 
 import { clamp } from './clamp.ts'
 import { makeCourse, refAt, type Course } from './course.ts'
-import { PLANT, inBand, initialPlant, stepPlant, type PlantState } from './plant.ts'
+import { PLANT, SETPOINT_MAX, SETPOINT_MIN, inBand, initialPlant, stepPlant, type PlantState } from './plant.ts'
 import {
   integrateEnergy,
   integrateError,
@@ -73,7 +73,7 @@ export interface Run extends ScoredRun {
    * reference from the next control tick (`ctx.ref`, `ctx.refAhead`, the
    * trace) and at once in the snapshot and the IAE. It is stored but unused in
    * other modes, never counts as a retune and drops no marker. A non-finite
-   * value is ignored; others are clamped to the safe band.
+   * value is ignored; others are clamped to [SETPOINT_MIN, SETPOINT_MAX].
    */
   setSetpoint(h: number): void
 }
@@ -283,7 +283,7 @@ export function createRun(options: RunOptions): Run {
     },
     setSetpoint(h) {
       if (typeof h !== 'number' || !Number.isFinite(h)) return
-      player.setpoint = clamp(h, PLANT.hFloor, PLANT.hCeil)
+      player.setpoint = clamp(h, SETPOINT_MIN, SETPOINT_MAX)
     },
     result(plane: PlaneId): PlaneResult | undefined {
       const p = find(plane)

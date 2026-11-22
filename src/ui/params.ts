@@ -82,8 +82,8 @@ export function resetChanges(specs: readonly ParamSpec[], params: Params): Param
   return changes
 }
 
-/** A typed number; blank or unparsable text is NaN. */
+/** A typed number; a comma counts as the decimal point, as phone keypads type it. Blank or unparsable text is NaN. */
 export function parseNumber(text: string): number {
-  const trimmed = text.trim()
+  const trimmed = text.trim().replace(',', '.')
   return trimmed === '' ? NaN : Number(trimmed)
 }

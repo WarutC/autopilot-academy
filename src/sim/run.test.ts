@@ -3,7 +3,7 @@ import { defaultParams } from '../algorithms/index.ts'
 import manual from '../algorithms/manual.ts'
 import pid from '../algorithms/pid.ts'
 import { makeCourse } from './course.ts'
-import { PLANT } from './plant.ts'
+import { PLANT, SETPOINT_MAX, SETPOINT_MIN } from './plant.ts'
 import { createRun, type Run, type RunAlgorithm } from './run.ts'
 import { ringsPassed, summarize } from './scoring.ts'
 import type { ControlContext, Snapshot } from './types.ts'
@@ -304,6 +304,18 @@ describe('Run setParam', () => {
     expect(summarize(run)!.tags).toEqual(['retuned'])
   })
 
+  it('settles the oscillation after Kd 0 is raised to 0.05 at 2 s, before the first ring', () => {
+    const steady = pidWith({ Kd: 0 })
+    const raised = pidWith({ Kd: 0 })
+    raised.step(Math.round(2 / PLANT.dt))
+    raised.setParam('player', 'Kd', 0.05)
+    flyToEnd(steady)
+    flyToEnd(raised)
+    expect(summarize(steady)!.rings).toBe(7)
+    expect(summarize(raised)!.rings).toBe(10)
+    expect(raised.status()).toBe('finished')
+  })
+
   it('ignores the value already set', () => {
     const run = pidRun()
     run.setParam('player', 'Kd', defaultParams(pid).Kd)
@@ -469,7 +481,7 @@ describe('Run setSetpoint', () => {
     expect(run.snapshot().planes[0].mode).toBe('autopilot')
   })
 
-  it('ignores non-finite values and clamps to the safe band, without throwing', () => {
+  it('ignores non-finite values and clamps one ring radius inside the safe band, without throwing', () => {
     const run = semiWith(fixed(() => 0))
     run.setSetpoint(70)
     expect(() => {
@@ -479,9 +491,13 @@ describe('Run setSetpoint', () => {
     }).not.toThrow()
     expect(run.snapshot().planes[0].ref).toBe(70)
     run.setSetpoint(500)
-    expect(run.snapshot().planes[0].ref).toBe(PLANT.hCeil)
+    expect(run.snapshot().planes[0].ref).toBe(103)
     run.setSetpoint(-3)
-    expect(run.snapshot().planes[0].ref).toBe(PLANT.hFloor)
+    expect(run.snapshot().planes[0].ref).toBe(13)
+    run.setSetpoint(PLANT.hCeil)
+    expect(run.snapshot().planes[0].ref).toBe(SETPOINT_MAX)
+    run.setSetpoint(PLANT.hFloor)
+    expect(run.snapshot().planes[0].ref).toBe(SETPOINT_MIN)
   })
 
   it('measures the IAE against the setpoint in Semi-auto', () => {

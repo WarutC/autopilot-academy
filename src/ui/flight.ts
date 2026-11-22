@@ -6,6 +6,7 @@
 import { PLANT } from '../sim/plant.ts'
 import type { Run } from '../sim/run.ts'
 import type { Snapshot } from '../sim/types.ts'
+import type { Stick } from './input.ts'
 import { createPhase, type Phase, type PhaseOwner } from './store.ts'
 
 export type { Phase } from './store.ts'
@@ -91,6 +92,18 @@ export function createFlight(makeRun: () => Run, owner: PhaseOwner = createPhase
       return run.snapshot()
     },
   }
+}
+
+/**
+ * The player looked away (a hidden tab, a rotation, the drawer opening):
+ * releases the stick and pauses a running flight; any other phase is left as
+ * it is. Returns true when it paused.
+ */
+export function pauseForInterruption(flight: Flight, stick: Pick<Stick, 'releaseAll'>): boolean {
+  stick.releaseAll()
+  if (flight.phase !== 'running') return false
+  flight.togglePause()
+  return true
 }
 
 export function flyLabel(phase: Phase): string {

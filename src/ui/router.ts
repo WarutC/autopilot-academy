@@ -3,16 +3,16 @@
 // hash, rewrites it with replaceState and listens for hashchange.
 
 import type { AlgorithmModule } from '../algorithms/index.ts'
-import { firstLesson, MAX_COURSE, validCourse } from './persistence.ts'
+import { MAX_COURSE, validCourse } from './persistence.ts'
 
 export interface Route {
-  /** The lesson to select; undefined when the hash is not a lesson route. */
+  /** The lesson to select; undefined unless the route names a registered one. */
   readonly lesson?: string
   /** The course to load; undefined unless the route names a valid one. */
   readonly course?: number
 }
 
-/** Reads `#/lesson/<id>?course=<n>`; an unknown lesson falls back, an invalid course is left out. */
+/** Reads `#/lesson/<id>?course=<n>`; an unknown lesson or an invalid course is left out, so the stored one stays. */
 export function parseRoute(hash: string, modules: readonly AlgorithmModule[]): Route {
   const text = hash.startsWith('#') ? hash.slice(1) : hash
   const q = text.indexOf('?')
@@ -27,11 +27,14 @@ export function parseRoute(hash: string, modules: readonly AlgorithmModule[]): R
   } catch {
     id = ''
   }
-  const lesson = modules.some((m) => m.id === id) ? id : firstLesson(modules)
+  const lesson = modules.some((m) => m.id === id) ? id : undefined
 
   const raw = new URLSearchParams(query).get('course')
   const course = raw !== null && /^\d+$/.test(raw) ? Number(raw) : undefined
-  return validCourse(course) ? { lesson, course } : { lesson }
+  return {
+    ...(lesson !== undefined && { lesson }),
+    ...(validCourse(course) && { course }),
+  }
 }
 
 /** The canonical hash for a lesson and course. */

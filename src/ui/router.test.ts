@@ -12,18 +12,16 @@ describe('parseRoute', () => {
     expect(parseRoute('#/lesson/manual?course=1', modules)).toEqual({ lesson: 'manual', course: 1 })
   })
 
-  it('falls back to PID for an unknown or empty lesson', () => {
-    expect(parseRoute('#/lesson/nope?course=7', modules)).toEqual({ lesson: 'pid', course: 7 })
-    expect(parseRoute('#/lesson/', modules)).toEqual({ lesson: 'pid' })
-    expect(parseRoute('#/lesson', modules)).toEqual({ lesson: 'pid' })
-  })
-
-  it('falls back to the first module when PID is not registered', () => {
-    expect(parseRoute('#/lesson/nope', [manual])).toEqual({ lesson: 'manual' })
+  it('leaves out an unknown or empty lesson, keeping a valid course', () => {
+    expect(parseRoute('#/lesson/nope?course=7', modules)).toEqual({ course: 7 })
+    expect(parseRoute('#/lesson/nope', modules)).toEqual({})
+    expect(parseRoute('#/lesson/', modules)).toEqual({})
+    expect(parseRoute('#/lesson', modules)).toEqual({})
+    expect(parseRoute('#/lesson/pid', [manual])).toEqual({})
   })
 
   it('treats a decode error as an unknown lesson', () => {
-    expect(parseRoute('#/lesson/%E0%A4', modules)).toEqual({ lesson: 'pid' })
+    expect(parseRoute('#/lesson/%E0%A4?course=3', modules)).toEqual({ course: 3 })
   })
 
   it('decodes the lesson id', () => {

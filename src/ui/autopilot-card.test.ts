@@ -117,7 +117,7 @@ describe('createAutopilotCard', () => {
       if (/^K[a-z]$/.test(spec.key)) expect(sub).toMatchObject({ textContent: spec.key.slice(1) })
       else expect(sub).toBeUndefined()
       expect(input.getAttribute('aria-label')).toBe(spec.accessibleName)
-      if (!spec.toggle) expect(r.slider!.getAttribute('aria-label')).toBe(spec.accessibleName)
+      if (!spec.toggle) expect(r.slider!.getAttribute('aria-label')).toBe(`${spec.accessibleName}, slider`)
     }
     expect(row('Kd').field!.value).toBe('0.05')
     expect(row('Kd').slider!.value).toBe('0.05')

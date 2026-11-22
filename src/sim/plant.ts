@@ -26,6 +26,10 @@ export const PLANT = {
   Tc: 0.02,
 } as const
 
+/** The Semi-auto setpoint range: one ring radius inside the safe band, so overshoot has room before a crash. */
+export const SETPOINT_MIN = PLANT.hFloor + PLANT.ringR
+export const SETPOINT_MAX = PLANT.hCeil - PLANT.ringR
+
 export interface PlantState {
   /** Altitude, m. */
   readonly h: number

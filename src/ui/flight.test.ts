@@ -5,7 +5,8 @@ import { PLANT } from '../sim/plant.ts'
 import { createRun } from '../sim/run.ts'
 import { summarize } from '../sim/scoring.ts'
 import { createPhase } from './store.ts'
-import { createFlight, flyLabel, inFlight, pauseLabel, type Flight, type Phase, type Speed } from './flight.ts'
+import { createStick } from './input.ts'
+import { createFlight, flyLabel, inFlight, MAX_FRAME, pauseForInterruption, pauseLabel, type Flight, type Phase, type Speed } from './flight.ts'
 
 const pidRun = () =>
   createRun({ course: 101, mode: 'autopilot', player: { algorithm: pid, params: defaultParams(pid) } })
@@ -220,5 +221,33 @@ describe('labels', () => {
 describe('inFlight', () => {
   it('holds only while a run is running or paused', () => {
     expect((['ready', 'running', 'paused', 'ended'] as Phase[]).map(inFlight)).toEqual([false, true, true, false])
+  })
+})
+
+describe('pauseForInterruption', () => {
+  /** A flight in `phase` and a stick holding climb. */
+  function setup(phase: Phase) {
+    const f = createFlight(pidRun)
+    if (phase !== 'ready') f.fly()
+    if (phase === 'paused') f.togglePause()
+    if (phase === 'ended') flyToEnd(f, [MAX_FRAME])
+    expect(f.phase).toBe(phase)
+    const stick = createStick(() => {})
+    stick.press('climb', 'key:w')
+    return { f, stick }
+  }
+
+  it('pauses a running flight and releases the stick', () => {
+    const { f, stick } = setup('running')
+    expect(pauseForInterruption(f, stick)).toBe(true)
+    expect(f.phase).toBe('paused')
+    expect(stick.value).toBe(0)
+  })
+
+  it.each(['ready', 'paused', 'ended'] as const)('leaves a %s flight as it is and still releases the stick', (phase) => {
+    const { f, stick } = setup(phase)
+    expect(pauseForInterruption(f, stick)).toBe(false)
+    expect(f.phase).toBe(phase)
+    expect(stick.value).toBe(0)
   })
 })

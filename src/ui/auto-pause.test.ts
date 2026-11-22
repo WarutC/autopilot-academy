@@ -3,6 +3,7 @@ import { watchAutoPause, type AutoPauseWindow } from './auto-pause.ts'
 
 /** An event target stand-in that records its listeners by type. */
 class FakeTarget {
+  matches = false
   readonly listeners = new Map<string, Set<() => void>>()
   addEventListener(type: string, listener: () => void): void {
     if (!this.listeners.has(type)) this.listeners.set(type, new Set())
@@ -23,9 +24,12 @@ class FakeDocument extends FakeTarget {
   hidden = false
 }
 
-function setup() {
+function setup(coarse = true) {
   const document = new FakeDocument()
   const queries = new Map<string, FakeTarget>()
+  const pointer = new FakeTarget()
+  pointer.matches = coarse
+  queries.set('(pointer: coarse)', pointer)
   const win = {
     document,
     matchMedia(query: string) {
@@ -36,7 +40,7 @@ function setup() {
   const pause = vi.fn()
   const stop = watchAutoPause(win as unknown as AutoPauseWindow, pause)
   const portrait = queries.get('(orientation: portrait)')!
-  return { document, portrait, pause, stop }
+  return { document, portrait, pointer, pause, stop }
 }
 
 describe('watchAutoPause', () => {
@@ -54,7 +58,20 @@ describe('watchAutoPause', () => {
     expect(pause).not.toHaveBeenCalled()
   })
 
-  it('pauses on each orientation flip', () => {
+  it('ignores an orientation flip with a fine pointer, such as a desktop window resize', () => {
+    const { portrait, pause } = setup(false)
+    portrait.fire('change')
+    expect(pause).not.toHaveBeenCalled()
+  })
+
+  it('reads the pointer at the flip, not at setup', () => {
+    const { portrait, pointer, pause } = setup(false)
+    pointer.matches = true
+    portrait.fire('change')
+    expect(pause).toHaveBeenCalledTimes(1)
+  })
+
+  it('pauses on each orientation flip with a coarse pointer', () => {
     const { portrait, pause } = setup()
     portrait.fire('change')
     expect(pause).toHaveBeenCalledTimes(1)

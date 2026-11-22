@@ -1,6 +1,7 @@
 // The cards drawer for phone landscape: a Cards button in the toolbar opens
 // the card column as a panel from the right, over a scrim. Close, a scrim tap
-// or Escape closes it. Outside phone landscape the column sits in the page and
+// or Escape closes it. While open the panel is a modal dialog and the page
+// behind it is inert. Outside phone landscape the column sits in the page and
 // the drawer controls are not displayed.
 
 /** Phone landscape: phones on their side are 340–430 px tall; laptops and projectors are taller. */
@@ -9,6 +10,8 @@ export const PHONE_LANDSCAPE = '(orientation: landscape) and (max-height: 540px)
 export interface DrawerOptions {
   /** The card column; it needs an id for `aria-controls`. */
   readonly panel: HTMLElement
+  /** The page behind the panel; inert while the drawer is open. */
+  readonly background: HTMLElement
   /** Called once each time the drawer opens. */
   onOpen(): void
 }
@@ -38,7 +41,7 @@ function button(doc: Document, className: string, text: string): HTMLButtonEleme
   return b
 }
 
-export function createDrawer(doc: Document, { panel, onOpen }: DrawerOptions): Drawer {
+export function createDrawer(doc: Document, { panel, background, onOpen }: DrawerOptions): Drawer {
   const toggle = button(doc, 'btn drawer-toggle', 'Cards')
   toggle.setAttribute('aria-controls', panel.id)
   toggle.setAttribute('aria-expanded', 'false')
@@ -55,6 +58,14 @@ export function createDrawer(doc: Document, { panel, onOpen }: DrawerOptions): D
     panel.classList.toggle(OPEN_CLASS, next)
     scrim.hidden = !next
     toggle.setAttribute('aria-expanded', String(next))
+    background.inert = next
+    if (next) {
+      panel.setAttribute('role', 'dialog')
+      panel.setAttribute('aria-modal', 'true')
+      panel.setAttribute('aria-label', 'Cards')
+    } else {
+      for (const name of ['role', 'aria-modal', 'aria-label']) panel.removeAttribute(name)
+    }
   }
 
   function open(): void {

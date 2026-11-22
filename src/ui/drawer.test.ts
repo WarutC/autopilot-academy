@@ -40,6 +40,7 @@ class FakeElement extends FakeTarget {
   className = ''
   type = ''
   hidden = false
+  inert = false
   textContent = ''
   readonly attrs = new Map<string, string>()
   readonly classes = new Set<string>()
@@ -61,6 +62,9 @@ class FakeElement extends FakeTarget {
   getAttribute(name: string): string | null {
     return this.attrs.get(name) ?? null
   }
+  removeAttribute(name: string): void {
+    this.attrs.delete(name)
+  }
   contains(el: FakeElement | null): boolean {
     return el === this || (el !== null && this.inside.includes(el))
   }
@@ -76,14 +80,19 @@ function setup() {
   const doc = new FakeDocument()
   const panel = doc.createElement()
   panel.id = 'cards'
+  const background = doc.createElement()
   const onOpen = vi.fn()
-  const drawer = createDrawer(doc as unknown as Document, { panel: panel as unknown as HTMLElement, onOpen })
+  const drawer = createDrawer(doc as unknown as Document, {
+    panel: panel as unknown as HTMLElement,
+    background: background as unknown as HTMLElement,
+    onOpen,
+  })
   const toggle = drawer.toggle as unknown as FakeElement
   const close = drawer.close as unknown as FakeElement
   const scrim = drawer.scrim as unknown as FakeElement
   // The caller prepends Close to the panel.
   panel.inside.push(close)
-  return { doc, panel, onOpen, drawer, toggle, close, scrim }
+  return { doc, panel, background, onOpen, drawer, toggle, close, scrim }
 }
 
 describe('PHONE_LANDSCAPE', () => {
@@ -113,6 +122,33 @@ describe('createDrawer', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     expect(onOpen).toHaveBeenCalledTimes(1)
     expect(doc.activeElement).toBe(close)
+  })
+
+  it('makes the open panel a modal dialog over an inert page, and undoes it on close', () => {
+    const { doc, panel, background, drawer, close } = setup()
+    expect(panel.getAttribute('role')).toBeNull()
+    expect(background.inert).toBe(false)
+    drawer.open()
+    expect(panel.getAttribute('role')).toBe('dialog')
+    expect(panel.getAttribute('aria-modal')).toBe('true')
+    expect(panel.getAttribute('aria-label')).toBe('Cards')
+    expect(background.inert).toBe(true)
+    expect(panel.contains(doc.activeElement)).toBe(true)
+    close.click()
+    expect([panel.getAttribute('role'), panel.getAttribute('aria-modal'), panel.getAttribute('aria-label')]).toEqual([
+      null,
+      null,
+      null,
+    ])
+    expect(background.inert).toBe(false)
+  })
+
+  it('releases the page when setActive(false) closes the drawer', () => {
+    const { panel, background, drawer } = setup()
+    drawer.open()
+    drawer.setActive(false)
+    expect(background.inert).toBe(false)
+    expect(panel.getAttribute('role')).toBeNull()
   })
 
   it('calls onOpen once per open', () => {
