@@ -38,6 +38,8 @@ function withU(trace: Trace, u: readonly number[]): Trace {
     copy.hMeas[i] = trace.hMeas[i]
     copy.hEst[i] = trace.hEst[i]
     copy.u[i] = u[i % u.length]
+    copy.noise[i] = trace.noise[i]
+    copy.kalman[i] = trace.kalman[i]
   }
   return copy
 }
@@ -380,7 +382,11 @@ describe('recorderGeometry: altimeter readings and Kalman estimate', () => {
   const s = fixtureSnapshot()
   const tr = s.trace.player!
   const n = tr.length
-  /** The fixture under `conditions`, its readings 1 m above the altitude and its estimate edited by `est`. */
+  /**
+   * The fixture flown under `conditions` throughout, its readings 1 m above the
+   * altitude and its estimate edited by `est`; the filter counts as having run
+   * on the rows where it is on and `est` moved the estimate off the reading.
+   */
   function withSensor(conditions: Partial<Snapshot['conditions']>, est: (i: number, hMeas: number) => number = (_, y) => y): Snapshot {
     const copy = createTrace(n)
     copy.length = n
@@ -391,9 +397,16 @@ describe('recorderGeometry: altimeter readings and Kalman estimate', () => {
       copy.hMeas[i] = tr.h[i] + 1
       copy.hEst[i] = est(i, copy.hMeas[i])
       copy.u[i] = tr.u[i]
+      copy.noise[i] = conditions.noise ?? 0
+      copy.kalman[i] = conditions.kalman && copy.hEst[i] !== copy.hMeas[i] ? 1 : 0
     }
     return { ...s, trace: { player: copy }, conditions: { ...s.conditions, ...conditions } }
   }
+  /** `snap` with the current conditions changed to `now`, as after a mid-flight change; the rows flown keep theirs. */
+  const nowUnder = (snap: Snapshot, now: Partial<Snapshot['conditions']>): Snapshot => ({
+    ...snap,
+    conditions: { ...snap.conditions, ...now },
+  })
 
   it('draws a reading every third row with an Altimeter entry when there is noise', () => {
     const snap = withSensor({ noise: 2 })
@@ -489,7 +502,7 @@ describe('recorderGeometry: altimeter readings and Kalman estimate', () => {
     expect(g.readings.some((p) => p.y === g.plot.bottom)).toBe(true)
   })
 
-  it('equals today\'s geometry without noise or the filter', () => {
+  it('draws no readings, estimate or their entries in calm air without the filter', () => {
     const g = recorderGeometry(s, SIZE)
     expect(g.readings).toEqual([])
     expect(g.estimate).toEqual([])
@@ -497,12 +510,45 @@ describe('recorderGeometry: altimeter readings and Kalman estimate', () => {
     expect(g.legend.every((e) => !e.dotted)).toBe(true)
   })
 
+  it('keeps the readings and the estimate already flown when noise goes to 0 and the filter off mid-flight', () => {
+    const narrow = { width: 400, height: 300, dpr: 1 }
+    const flown = withSensor({ noise: 2, kalman: 1 }, (i, y) => (i >= 10 ? y - 0.5 : y))
+    const before = recorderGeometry(flown, narrow)
+    const after = recorderGeometry(nowUnder(flown, { noise: 0, kalman: 0 }), narrow)
+    expect(after.readings).toEqual(before.readings)
+    expect(after.readings).toHaveLength(Math.ceil(n / 3))
+    expect(after.estimate).toEqual(before.estimate)
+    expect(after.legend.map((e) => e.key)).toEqual(['target', 'altitude', 'altimeter', 'estimate', 'elevator'])
+    expect(after.plot).toEqual(before.plot)
+  })
+
+  it('draws no readings or estimate over rows flown before noise or the filter was turned on', () => {
+    const narrow = { width: 400, height: 300, dpr: 1 }
+    const calm = withSensor({})
+    const g = recorderGeometry(nowUnder(calm, { noise: 2, kalman: 1 }), narrow)
+    expect(g.readings).toEqual([])
+    expect(g.estimate).toEqual([])
+    expect(g.legend.map((e) => e.key)).toEqual(['target', 'altitude', 'elevator'])
+    // The rows for the coming entries are reserved, so the plot stays put when they appear.
+    const later = recorderGeometry(withSensor({ noise: 2, kalman: 1 }, (_, y) => y - 0.5), narrow)
+    expect(g.plot).toEqual(later.plot)
+  })
+
+  it('draws readings only from the row where noise was turned on', () => {
+    const late = withSensor({ noise: 2 })
+    const t = late.trace.player! as unknown as { noise: Float64Array }
+    for (let i = 0; i < 30; i++) t.noise[i] = 0
+    const g = recorderGeometry(late, SIZE)
+    expect(g.readings[0]!.x).toBe(g.altitude[30]!.x)
+    expect(g.readings).toHaveLength(Math.ceil((n - 30) / 3))
+  })
+
   it('never writes into the snapshot', () => {
     const snap = withSensor({ noise: 2, kalman: 1 }, (i, y) => (i > 5 ? y - 0.5 : y))
     const t = snap.trace.player!
-    const before = JSON.stringify({ ...snap, trace: { player: [t.t, t.h, t.hMeas, t.hEst, t.u].map((c) => Array.from(c)) } })
+    const before = JSON.stringify({ ...snap, trace: { player: [t.t, t.h, t.hMeas, t.hEst, t.u, t.noise, t.kalman].map((c) => Array.from(c)) } })
     recorderGeometry(snap, SIZE)
-    const after = JSON.stringify({ ...snap, trace: { player: [t.t, t.h, t.hMeas, t.hEst, t.u].map((c) => Array.from(c)) } })
+    const after = JSON.stringify({ ...snap, trace: { player: [t.t, t.h, t.hMeas, t.hEst, t.u, t.noise, t.kalman].map((c) => Array.from(c)) } })
     expect(after).toBe(before)
   })
 })

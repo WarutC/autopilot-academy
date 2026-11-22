@@ -52,7 +52,7 @@ function snapshotWith(p: PlaneSnapshot | null, trace?: Trace): Snapshot {
 
 function traceOf(rows: Array<readonly [t: number, h: number]>, capacity = rows.length + 5): TraceBuffer {
   const col = () => new Float64Array(capacity)
-  const tr = { length: rows.length, t: col(), ref: col(), h: col(), hMeas: col(), hEst: col(), u: col() }
+  const tr = { length: rows.length, t: col(), ref: col(), h: col(), hMeas: col(), hEst: col(), u: col(), noise: col(), kalman: col() }
   rows.forEach(([t, h], i) => {
     tr.t[i] = t
     tr.h[i] = h

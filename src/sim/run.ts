@@ -253,6 +253,8 @@ export function createRun(options: RunOptions): Run {
       tr.hMeas[i] = p.hMeas
       tr.hEst[i] = p.hEst
       tr.u[i] = p.u
+      tr.noise[i] = conditions.noise
+      tr.kalman[i] = p.kf ? 1 : 0
       tr.length = i + 1
     }
   }

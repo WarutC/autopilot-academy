@@ -145,6 +145,8 @@ describe('recorder draw', () => {
       copy.hMeas[i] = tr.h[i] + 1
       copy.hEst[i] = i >= 10 && kalman ? tr.h[i] - 0.5 : copy.hMeas[i]
       copy.u[i] = tr.u[i]
+      copy.noise[i] = 2
+      copy.kalman[i] = i >= 10 && kalman ? 1 : 0
     }
     return { ...base, trace: { player: copy }, conditions: { ...base.conditions, noise: 2, kalman } }
   }
@@ -184,7 +186,7 @@ describe('recorder draw', () => {
   it('never writes into the snapshot', () => {
     const s = sensorSnapshot(1)
     const t = s.trace.player!
-    const cols = () => [t.t, t.h, t.hMeas, t.hEst, t.u].map((c) => Array.from(c))
+    const cols = () => [t.t, t.h, t.hMeas, t.hEst, t.u, t.noise, t.kalman].map((c) => Array.from(c))
     const before = JSON.stringify([s.conditions, s.planes, s.markers, cols()])
     const { ctx } = recordingContext()
     draw(ctx, s, LIGHT, { width: 1000, height: 240, dpr: 1 })

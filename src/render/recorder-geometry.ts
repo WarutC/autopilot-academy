@@ -1,7 +1,8 @@
 // Everything the flight recorder draws, worked out from a snapshot and the
 // canvas size in CSS pixels: a legend row, the altitude plot with the target,
 // the altitude flown, the altimeter readings and the Kalman estimate, ring bars
-// and parameter markers, and a lower band for the elevator command. Pure: the renderer only strokes and fills what this returns.
+// and parameter markers, and a lower band for the elevator command. Pure: the
+// renderer only strokes and fills what this returns.
 
 import { courseFromRings, refAt } from '../sim/course.ts'
 import { PLANT } from '../sim/plant.ts'
@@ -121,7 +122,7 @@ export interface RecorderGeometry {
   readonly altitude: readonly Point[]
   /** The wingman's altitude flown; empty without a wingman. */
   readonly wingman: readonly Point[]
-  /** The player's altimeter readings, every `READING_EVERY` rows; empty without noise. */
+  /** The player's altimeter readings, every `READING_EVERY` rows, on the rows read with noise. */
   readonly readings: readonly Point[]
   /** The player's Kalman estimate, one polyline per run of rows where the filter ran; empty when it is off. */
   readonly estimate: readonly (readonly Point[])[]
@@ -206,17 +207,19 @@ export function recorderGeometry(
   const wingmanTrace = snapshot.trace.wingman
   const hasWingman = snapshot.planes.some((p) => p.id === 'wingman')
   const hasWingmanTrace = (wingmanTrace?.length ?? 0) >= 2
-  const noisy = snapshot.conditions.noise > 0
-  const filtered = snapshot.conditions.kalman !== 0
-  const hasReadings = noisy && hasTrace
+  // Each row says whether it was read with noise and whether the filter ran,
+  // so a mid-flight change of the conditions never redraws rows already flown.
+  const readingRows: number[] = []
+  if (trace && hasTrace) {
+    for (let i = 0; i < n; i += READING_EVERY) if (trace.noise[i] > 0) readingRows.push(i)
+  }
+  const hasReadings = readingRows.length > 0
 
-  // The estimate runs over the rows where the filter ran: an off filter copies
-  // the reading exactly, a running one essentially never lands on it.
   const estimateRuns: number[][] = []
-  if (filtered && trace) {
+  if (trace) {
     let run: number[] = []
     for (let i = 0; i <= n; i++) {
-      if (i < n && trace.hEst[i] !== trace.hMeas[i]) {
+      if (i < n && trace.kalman[i] !== 0) {
         run.push(i)
       } else {
         if (run.length >= 2) estimateRuns.push(run)
@@ -234,12 +237,12 @@ export function recorderGeometry(
   if (hasEstimate) keys.push('estimate')
   if (hasTrace) keys.push('elevator')
   const { entries: legend } = layoutLegend(keys, W, measure)
-  // Reserve the rows the full legend needs, so the plot does not move when
-  // the altitude, wingman, altimeter, estimate and elevator entries appear.
+  // Reserve the rows for every entry that is drawn or that the current
+  // conditions will draw, so the plot does not move when an entry appears.
   const reserve: LegendKey[] = ['target', 'altitude']
   if (hasWingman) reserve.push('wingman')
-  if (noisy) reserve.push('altimeter')
-  if (filtered) reserve.push('estimate')
+  if (hasReadings || snapshot.conditions.noise > 0) reserve.push('altimeter')
+  if (hasEstimate || snapshot.conditions.kalman !== 0) reserve.push('estimate')
   reserve.push('elevator')
   const { rows } = layoutLegend(reserve, W, measure)
 
@@ -280,10 +283,7 @@ export function recorderGeometry(
     for (let i = 0; i < wingmanTrace.length; i++) wingman.push({ x: X(wingmanTrace.t[i]), y: Y(wingmanTrace.h[i]) })
   }
   const clip = (y: number): number => Math.min(plot.bottom, Math.max(plot.top, y))
-  const readings: Point[] = []
-  if (trace && hasReadings) {
-    for (let i = 0; i < n; i += READING_EVERY) readings.push({ x: X(trace.t[i]), y: clip(Y(trace.hMeas[i])) })
-  }
+  const readings: Point[] = trace ? readingRows.map((i) => ({ x: X(trace.t[i]), y: clip(Y(trace.hMeas[i])) })) : []
   const estimate: Point[][] = trace
     ? estimateRuns.map((run) => run.map((i) => ({ x: X(trace.t[i]), y: clip(Y(trace.hEst[i])) })))
     : []

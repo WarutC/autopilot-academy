@@ -75,6 +75,10 @@ export interface Trace {
   readonly hMeas: TraceColumn
   readonly hEst: TraceColumn
   readonly u: TraceColumn
+  /** The altimeter noise σ the row was read with, in meters; 0 for a perfect reading. */
+  readonly noise: TraceColumn
+  /** 1 where the Kalman filter produced the row's estimate, else 0. */
+  readonly kalman: TraceColumn
 }
 
 export interface PlaneSnapshot {

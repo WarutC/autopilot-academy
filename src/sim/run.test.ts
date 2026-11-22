@@ -1002,6 +1002,23 @@ describe('Run altimeter noise and Kalman filter', () => {
     expect(startTr[3]![i]! - startTr[2]![i]!).toBeCloseTo(2 * samples[i]!, 9)
   })
 
+  it('records per row the noise each reading had and whether the filter ran', () => {
+    const run = pidOn()
+    run.step(CONTROL_EVERY * 10)
+    run.setEnv('noise', 1.5)
+    run.step(CONTROL_EVERY * 10)
+    run.setEnv('kalman', 1)
+    run.step(CONTROL_EVERY * 10)
+    run.setEnv('noise', 0)
+    run.setEnv('kalman', 0)
+    run.step(CONTROL_EVERY * 10)
+    const tr = run.snapshot().trace.player!
+    const col = (c: Float64Array | Readonly<Float64Array>) => Array.from(c.subarray(0, tr.length))
+    const blocks = (a: number, b: number, c: number, d: number) => [a, b, c, d].flatMap((v) => Array<number>(10).fill(v))
+    expect(col(tr.noise)).toEqual(blocks(0, 1.5, 1.5, 0))
+    expect(col(tr.kalman)).toEqual(blocks(0, 0, 1, 0))
+  })
+
   it('records the same flight however the steps are batched', () => {
     const runs = [1, 2, 4].map((n) => {
       const run = pidOn({ noise: 2, kalman: 1 })
