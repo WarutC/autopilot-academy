@@ -7,16 +7,17 @@ import { draw as drawSplane } from './render/splane.ts'
 import { PLANT, SETPOINT_MAX, SETPOINT_MIN } from './sim/plant.ts'
 import type { Run, RunPlayer } from './sim/run.ts'
 import type { PlaneResult } from './sim/scoring.ts'
-import type { Conditions, FlightMode, Snapshot } from './sim/types.ts'
+import type { FlightMode, Snapshot } from './sim/types.ts'
 import { watchAutoPause } from './ui/auto-pause.ts'
 import { createAutopilotCard } from './ui/autopilot-card.ts'
 import { bannerContent, createBanner } from './ui/banner.ts'
 import { createConditionsCard } from './ui/conditions-card.ts'
 import { createDrawer, PHONE_LANDSCAPE } from './ui/drawer.ts'
+import { createFlightSettings } from './ui/flight-settings.ts'
 import { createFlight, inFlight, pauseForInterruption, playerRuns, type Phase } from './ui/flight.ts'
 import { createStick, gameKey, typingTarget } from './ui/input.ts'
 import { createLogbookCard } from './ui/logbook-card.ts'
-import { createRunLogger } from './ui/logbook.ts'
+import { createEndedRunStep } from './ui/logbook.ts'
 import { createModeSwitch } from './ui/mode-switch.ts'
 import { createPoleReadout, lessonAnalysis } from './ui/pole-readout.ts'
 import { browserStorage, validCourse } from './ui/persistence.ts'
@@ -176,35 +177,27 @@ const poleReadout = createPoleReadout(document)
 const poleCtx = poleReadout.canvas.getContext('2d')!
 side.append(poleReadout.element)
 
-/** Every flight condition, from the downdraft to the Kalman filter's Q and R; a change reaches the current run at once and every later Fly. */
-const conditionsCard = createConditionsCard(document, store.conditions, {
-  change(key, value) {
-    store.setCondition(key, value)
-    // An ended run keeps the conditions it flew; the ready preview takes them so its snapshot stays current.
-    if (flight.phase !== 'ended') flight.run.setEnv(key, store.conditions[key as keyof Conditions])
-    requestDraw()
-  },
+/** The Flight conditions and Wingman handlers: a finished run keeps what it flew; the next Fly takes the new settings. */
+const settings = createFlightSettings({
+  store,
+  flight,
+  clearFixture,
+  synced: syncUi,
+  redraw: requestDraw,
 })
+
+/** Every flight condition, from the downdraft to the Kalman filter's Q and R; a change reaches the current run at once and every later Fly. */
+const conditionsCard = createConditionsCard(document, store.conditions, settings.conditions)
 side.append(conditionsCard.element)
 
 /** The second autopilot flown beside the player; locked while a run flies. */
-const wingmanCard = createWingmanCard(document, algorithms, store.wingman, {
-  change(id) {
-    store.setWingman(id)
-    if (inFlight(flight.phase)) return
-    // Outside a flight the run is the next flight's preview, so show the new wingman in it, not a dev fixture.
-    clearFixture()
-    flight.reset()
-    syncUi()
-    requestDraw()
-  },
-})
+const wingmanCard = createWingmanCard(document, algorithms, store.wingman, settings.wingman)
 side.append(wingmanCard.element)
 
 /** The session's newest flights; each ended run is logged once and may raise its lesson's best score. */
 const logbookCard = createLogbookCard(document, (id) => findAlgorithm(id)?.name)
 side.append(logbookCard.element)
-const logRun = createRunLogger(store)
+const logEndedRun = createEndedRunStep(store, { logbook: logbookCard.update, bests: autopilotCard.setBests })
 logbookCard.update(store.logbook)
 autopilotCard.setBests(store.best)
 
@@ -307,10 +300,7 @@ function syncUi(): void {
   toolbar.update(flight.phase, flight.speed, store.course)
   autopilotCard.setPhase(flight.phase)
   wingmanCard.setPhase(flight.phase)
-  if (flight.phase === 'ended' && logRun(flight.run)) {
-    logbookCard.update(store.logbook)
-    autopilotCard.setBests(store.best)
-  }
+  logEndedRun(flight.phase, flight.run)
   // The banner depends only on the phase, the run's result and a loaded course, so recompute it when one changes.
   if (flight.phase !== bannerPhase || flight.run !== bannerRun || loadedCourse !== bannerCourse) {
     bannerPhase = flight.phase

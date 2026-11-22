@@ -3,6 +3,7 @@
 // owner. Rows and eligibility come from `sim/scoring` alone.
 
 import { isBestEligible, summarize, type LogEntry, type ScoredRun } from '../sim/scoring.ts'
+import type { Phase } from './store.ts'
 
 /** How many rows the logbook keeps. */
 export const LOGBOOK_SIZE = 8
@@ -70,5 +71,25 @@ export function createRunLogger(owner: LogbookOwner): (run: ScoredRun) => boolea
     owner.setLogbook(next.rows)
     if (next.best !== undefined && next.best !== before) owner.setBest(player.lesson, next.best)
     return true
+  }
+}
+
+/** Where a logged run shows: the Logbook card's rows and the lesson chips' best scores. */
+export interface LoggedRunView {
+  logbook(rows: readonly LogEntry[]): void
+  bests(best: Readonly<Record<string, number>>): void
+}
+
+/**
+ * The frame loop's logging step: once the flight has ended, logs its run into
+ * `owner` and refreshes both views; a run that is still running, paused or
+ * ready, or one already logged, changes nothing.
+ */
+export function createEndedRunStep(owner: LogbookOwner, view: LoggedRunView): (phase: Phase, run: ScoredRun) => void {
+  const logRun = createRunLogger(owner)
+  return (phase, run) => {
+    if (phase !== 'ended' || !logRun(run)) return
+    view.logbook(owner.logbook)
+    view.bests(owner.best)
   }
 }
