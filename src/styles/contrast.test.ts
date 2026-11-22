@@ -2,27 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { READING_ALPHA, RING_BAR_OUTLINE_TOKEN } from '../render/recorder.ts'
 import { cssVarName } from '../ui/theme.ts'
 import layoutCss from './layout.css?raw'
+import { contrast, over, themeTokens } from './css-test-helpers.ts'
 import tokensCss from './tokens.css?raw'
-
-type Tokens = Record<string, string>
-
-/** The custom properties declared in `block`, by name without the leading dashes. */
-function declarations(block: string): Tokens {
-  const out: Tokens = {}
-  for (const match of block.matchAll(/--([\w-]+):\s*([^;]+);/g)) out[match[1]] = match[2].trim()
-  return out
-}
-
-/** The text between the brace that opens after `from` and its matching close. */
-function blockAfter(css: string, from: number): string {
-  const open = css.indexOf('{', from)
-  let depth = 0
-  for (let i = open; i < css.length; i++) {
-    if (css[i] === '{') depth++
-    else if (css[i] === '}' && --depth === 0) return css.slice(open + 1, i)
-  }
-  throw new Error('unbalanced braces')
-}
 
 /** The share of Ghost in the wingman logbook tag's text color, mixed with Ink in layout.css. */
 const wingmanTagGhost = (() => {
@@ -31,42 +12,7 @@ const wingmanTagGhost = (() => {
   return Number(m[1]) / 100
 })()
 
-const light = declarations(blockAfter(tokensCss, tokensCss.indexOf(':root')))
-// Dark redefines some tokens and inherits the rest from the light block.
-const dark = { ...light, ...declarations(blockAfter(tokensCss, tokensCss.indexOf('prefers-color-scheme: dark'))) }
-
-function channel(c: number): number {
-  const s = c / 255
-  return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
-}
-
-/** WCAG relative luminance of a `#RRGGBB` color. */
-function luminance(hex: string): number {
-  const m = /^#([0-9a-f]{6})$/i.exec(hex)
-  if (!m) throw new Error(`not a #RRGGBB color: ${hex}`)
-  const n = parseInt(m[1], 16)
-  return 0.2126 * channel((n >> 16) & 255) + 0.7152 * channel((n >> 8) & 255) + 0.0722 * channel(n & 255)
-}
-
-/** `fg` at opacity `alpha` painted over `bg`, as `#RRGGBB`. */
-function over(fg: string, bg: string, alpha: number): string {
-  const rgb = (hex: string) => [0, 2, 4].map((i) => parseInt(hex.slice(1 + i, 3 + i), 16))
-  const [f, b] = [rgb(fg), rgb(bg)]
-  return `#${f.map((c, i) => Math.round(c * alpha + b[i] * (1 - alpha)).toString(16).padStart(2, '0')).join('')}`
-}
-
-/** WCAG contrast ratio between two `#RRGGBB` colors. */
-function contrast(a: string, b: string): number {
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
-  return (hi + 0.05) / (lo + 0.05)
-}
-
-describe('contrast helper', () => {
-  it('gives the WCAG extremes', () => {
-    expect(contrast('#000000', '#FFFFFF')).toBeCloseTo(21, 5)
-    expect(contrast('#777777', '#777777')).toBe(1)
-  })
-})
+const { light, dark } = themeTokens(tokensCss)
 
 describe.each([
   ['light', light],

@@ -1,23 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { COMPACT, MEDIA_QUERIES, PHONE, PHONE_LANDSCAPE, PHONE_PORTRAIT } from '../ui/media.ts'
+import { blockAfter, mediaPreludes } from './css-test-helpers.ts'
 import layoutCss from './layout.css?raw'
-
-/** The text between the brace that opens after `from` and its matching close. */
-function blockAfter(css: string, from: number): string {
-  const open = css.indexOf('{', from)
-  let depth = 0
-  for (let i = open; i < css.length; i++) {
-    if (css[i] === '{') depth++
-    else if (css[i] === '}' && --depth === 0) return css.slice(open + 1, i)
-  }
-  throw new Error('unbalanced braces')
-}
-
-/** The trimmed text between each `@media` and its `{`, comments removed. */
-function mediaPreludes(css: string): string[] {
-  const flat = css.replace(/\/\*[\s\S]*?\*\//g, '')
-  return [...flat.matchAll(/@media([^{]*)\{/g)].map((m) => m[1].trim())
-}
 
 describe('layout.css phone layouts', () => {
   it('has a phone landscape block on the same query the drawer uses', () => {
@@ -33,6 +17,11 @@ describe('layout.css phone layouts', () => {
     expect(at).toBeGreaterThanOrEqual(0)
     expect(blockAfter(layoutCss, at)).toMatch(/\.scene\s*\{[^}]*aspect-ratio: 4 \/ 3;/)
   })
+
+  it('stacks the About credits in one column below 600 px', () => {
+    const at = layoutCss.indexOf(`@media ${PHONE_PORTRAIT} {`)
+    expect(blockAfter(layoutCss, at)).toMatch(/\.about-credits\s*\{[^}]*grid-template-columns: minmax\(0, 1fr\);/)
+  })
 })
 
 describe('layout.css media queries', () => {
@@ -41,6 +30,14 @@ describe('layout.css media queries', () => {
   it('uses only the queries the scripts share', () => {
     expect(preludes.length).toBeGreaterThan(0)
     for (const prelude of preludes) expect(MEDIA_QUERIES, prelude).toContain(prelude)
+  })
+
+  it('has one block per query', () => {
+    const seen = new Set<string>()
+    for (const prelude of preludes) {
+      expect(seen.has(prelude), `repeated @media ${prelude}`).toBe(false)
+      seen.add(prelude)
+    }
   })
 
   it.each([

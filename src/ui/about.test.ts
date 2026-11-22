@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import layoutCss from '../styles/layout.css?raw'
+import { contrast, ruleBody as cssRuleBody, themeTokens } from '../styles/css-test-helpers.ts'
 import tokensCss from '../styles/tokens.css?raw'
 import {
   ABOUT_INTRO,
@@ -244,53 +245,8 @@ describe('createAbout', () => {
   })
 })
 
-// Contrast helpers, as in the theme contrast tests.
-type Tokens = Record<string, string>
-
-function declarations(block: string): Tokens {
-  const out: Tokens = {}
-  for (const match of block.matchAll(/--([\w-]+):\s*([^;]+);/g)) out[match[1]] = match[2].trim()
-  return out
-}
-
-function blockAfter(css: string, from: number): string {
-  const open = css.indexOf('{', from)
-  let depth = 0
-  for (let i = open; i < css.length; i++) {
-    if (css[i] === '{') depth++
-    else if (css[i] === '}' && --depth === 0) return css.slice(open + 1, i)
-  }
-  throw new Error('unbalanced braces')
-}
-
-function channel(c: number): number {
-  const s = c / 255
-  return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
-}
-
-function luminance(hex: string): number {
-  const m = /^#([0-9a-f]{6})$/i.exec(hex)
-  if (!m) throw new Error(`not a #RRGGBB color: ${hex}`)
-  const n = parseInt(m[1], 16)
-  return 0.2126 * channel((n >> 16) & 255) + 0.7152 * channel((n >> 8) & 255) + 0.0722 * channel(n & 255)
-}
-
-function contrast(a: string, b: string): number {
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
-  return (hi + 0.05) / (lo + 0.05)
-}
-
-const light = declarations(blockAfter(tokensCss, tokensCss.indexOf(':root')))
-const dark = { ...light, ...declarations(blockAfter(tokensCss, tokensCss.indexOf('prefers-color-scheme: dark'))) }
-
-/** The body of the first rule whose selector list is exactly `selector`. */
-function ruleBody(selector: string): string {
-  const flat = layoutCss.replace(/\/\*[\s\S]*?\*\//g, '')
-  for (const m of flat.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    if (m[1].split(',').some((s) => s.trim() === selector)) return m[2]
-  }
-  throw new Error(`no ${selector} rule in layout.css`)
-}
+const { light, dark } = themeTokens(tokensCss)
+const ruleBody = (selector: string) => cssRuleBody(layoutCss, selector)
 
 /** The darkest blue in the Ruk-Com logo. */
 const LOGO_BLUE = '#0064a2'

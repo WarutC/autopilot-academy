@@ -678,100 +678,6 @@ body {
   display: none;
 }
 
-/* Phone portrait: a 4:3 scene. */
-@media (max-width: 599px) {
-  .scene {
-    aspect-ratio: 4 / 3;
-  }
-}
-
-/* On a phone the stick buttons sit left of the score badge column. */
-@media (max-width: 599px), (orientation: landscape) and (max-height: 540px) {
-  .stick {
-    top: 16px;
-    bottom: 16px;
-    right: 124px;
-  }
-}
-
-/*
- * Phone landscape: the scene and one toolbar row fill the viewport, and the
- * cards open as a drawer from the right. The scene height leaves room for the
- * 8 px page padding and a 72 px toolbar: a 52 px row inside 10 px padding,
- * which keeps each control's focus ring and halo (7 px) inside the toolbar's
- * scroll clip and also serves as the gap above and below it.
- */
-@media (orientation: landscape) and (max-height: 540px) {
-  #app {
-    --page-pad: 8px;
-  }
-
-  .layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .layout-main {
-    gap: 0;
-  }
-
-  .scene {
-    aspect-ratio: auto;
-    height: calc(100dvh - 80px);
-  }
-
-  /* One row in the order mode switch, Fly, Pause, speed, Cards, Course, New course; it scrolls sideways. */
-  .layout-main .toolbar {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding: 10px;
-  }
-
-  .toolbar > * {
-    flex: none;
-  }
-
-  .drawer-toggle,
-  .drawer-close {
-    display: inline-block;
-  }
-
-  .drawer-close {
-    justify-self: end;
-  }
-
-  /* The card column as a panel from the right; hidden, so nothing in it takes focus while closed. */
-  .layout-side {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 20;
-    box-sizing: border-box;
-    width: min(380px, 88vw);
-    padding: 8px 16px;
-    align-content: start;
-    /* Cards clip their overflow, so without this the rows shrink to the panel height and cut the cards off; the panel scrolls instead. */
-    grid-auto-rows: max-content;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    background: var(--bg);
-    border-left: 2px solid var(--strong);
-    visibility: hidden;
-  }
-
-  .layout-side.drawer-open {
-    visibility: visible;
-  }
-
-  .drawer-scrim:not([hidden]) {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 10;
-    background: rgba(19, 41, 75, 0.5);
-  }
-}
-
 /* A tapped recorder on a phone spans the viewport edge to edge and grows taller. */
 .recorder-card.expanded {
   margin-inline: calc(-1 * var(--page-pad));
@@ -924,9 +830,101 @@ body {
   justify-self: start;
 }
 
-/* Phone portrait: the credits stack in one column. */
+/* Phone portrait: a 4:3 scene. */
 @media (max-width: 599px) {
+  .scene {
+    aspect-ratio: 4 / 3;
+  }
+
+  /* The credits stack in one column. */
   .about-credits {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* On a phone the stick buttons sit left of the score badge column. */
+@media (max-width: 599px), (orientation: landscape) and (max-height: 540px) {
+  .stick {
+    top: 16px;
+    bottom: 16px;
+    right: 124px;
+  }
+}
+
+/*
+ * Phone landscape: the scene and one toolbar row fill the viewport, and the
+ * cards open as a drawer from the right. The scene height leaves room for the
+ * 8 px page padding and a 72 px toolbar: a 52 px row inside 10 px padding,
+ * which keeps each control's focus ring and halo (7 px) inside the toolbar's
+ * scroll clip and also serves as the gap above and below it.
+ */
+@media (orientation: landscape) and (max-height: 540px) {
+  #app {
+    --page-pad: 8px;
+  }
+
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .layout-main {
+    gap: 0;
+  }
+
+  .scene {
+    aspect-ratio: auto;
+    height: calc(100dvh - 80px);
+  }
+
+  /* One row in the order mode switch, Fly, Pause, speed, Cards, Course, New course; it scrolls sideways. */
+  .layout-main .toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 10px;
+  }
+
+  .toolbar > * {
+    flex: none;
+  }
+
+  .drawer-toggle,
+  .drawer-close {
+    display: inline-block;
+  }
+
+  .drawer-close {
+    justify-self: end;
+  }
+
+  /* The card column as a panel from the right; hidden, so nothing in it takes focus while closed. */
+  .layout-side {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    box-sizing: border-box;
+    width: min(380px, 88vw);
+    padding: 8px 16px;
+    align-content: start;
+    /* Cards clip their overflow, so without this the rows shrink to the panel height and cut the cards off; the panel scrolls instead. */
+    grid-auto-rows: max-content;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--bg);
+    border-left: 2px solid var(--strong);
+    visibility: hidden;
+  }
+
+  .layout-side.drawer-open {
+    visibility: visible;
+  }
+
+  .drawer-scrim:not([hidden]) {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    background: rgba(19, 41, 75, 0.5);
   }
 }

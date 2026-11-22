@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import layoutCss from '../styles/layout.css?raw'
+import { contrast, rgbaOver, ruleBody, themeTokens } from '../styles/css-test-helpers.ts'
 import tokensCss from '../styles/tokens.css?raw'
 import {
   createMascot,
@@ -141,68 +142,19 @@ describe('createMascot', () => {
   })
 })
 
-// Contrast helpers, as in the theme contrast tests.
-function declarations(block: string): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const match of block.matchAll(/--([\w-]+):\s*([^;]+);/g)) out[match[1]!] = match[2]!.trim()
-  return out
-}
-
-function blockAfter(css: string, from: number): string {
-  const open = css.indexOf('{', from)
-  let depth = 0
-  for (let i = open; i < css.length; i++) {
-    if (css[i] === '{') depth++
-    else if (css[i] === '}' && --depth === 0) return css.slice(open + 1, i)
-  }
-  throw new Error('unbalanced braces')
-}
-
-function channel(c: number): number {
-  const s = c / 255
-  return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
-}
-
-function rgb(hex: string): [number, number, number] {
-  const m = /^#([0-9a-f]{6})$/i.exec(hex)
-  if (!m) throw new Error(`not a #RRGGBB color: ${hex}`)
-  const n = parseInt(m[1]!, 16)
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
-}
-
-function luminance([r, g, b]: readonly number[]): number {
-  return 0.2126 * channel(r!) + 0.7152 * channel(g!) + 0.0722 * channel(b!)
-}
-
-function contrast(a: readonly number[], b: readonly number[]): number {
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
-  return (hi! + 0.05) / (lo! + 0.05)
-}
-
-/** The body of the first rule whose selector list is exactly `selector`. */
-function ruleBody(selector: string): string {
-  const flat = layoutCss.replace(/\/\*[\s\S]*?\*\//g, '')
-  for (const m of flat.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    if (m[1]!.split(',').some((s) => s.trim() === selector)) return m[2]!
-  }
-  throw new Error(`no ${selector} rule in layout.css`)
-}
-
 describe('mascot contrast', () => {
   it('keeps the Penguin outline at 3:1 on the banner over black and over white', () => {
-    const bg = /background:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/.exec(ruleBody('.banner'))
+    const bg = /background:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/.exec(ruleBody(layoutCss, '.banner'))
     expect(bg).not.toBeNull()
     const [r, g, b, a] = bg!.slice(1).map(Number) as [number, number, number, number]
-    const over = (under: number) => [r, g, b].map((c) => Math.round(c * a + under * (1 - a)))
-    const outline = rgb(PENGUIN_PALETTE.O!)
-    expect(contrast(outline, over(0))).toBeGreaterThanOrEqual(3)
-    expect(contrast(outline, over(255))).toBeGreaterThanOrEqual(3)
+    const outline = PENGUIN_PALETTE.O!
+    expect(contrast(outline, rgbaOver(r, g, b, a, '#000000'))).toBeGreaterThanOrEqual(3)
+    expect(contrast(outline, rgbaOver(r, g, b, a, '#FFFFFF'))).toBeGreaterThanOrEqual(3)
   })
 
   it('keeps the Whale outline on the light panel and its body on the dark panel at 3:1', () => {
-    const light = declarations(blockAfter(tokensCss, tokensCss.indexOf(':root')))
-    const dark = { ...light, ...declarations(blockAfter(tokensCss, tokensCss.indexOf('prefers-color-scheme: dark'))) }
-    expect(contrast(rgb(WHALE_PALETTE.K!), rgb(light.panel!))).toBeGreaterThanOrEqual(3)
-    expect(contrast(rgb(WHALE_PALETTE.C!), rgb(dark.panel!))).toBeGreaterThanOrEqual(3)
+    const { light, dark } = themeTokens(tokensCss)
+    expect(contrast(WHALE_PALETTE.K!, light.panel!)).toBeGreaterThanOrEqual(3)
+    expect(contrast(WHALE_PALETTE.C!, dark.panel!)).toBeGreaterThanOrEqual(3)
   })
 })
