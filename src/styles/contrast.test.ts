@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { READING_ALPHA } from '../render/recorder.ts'
 import layoutCss from './layout.css?raw'
 import tokensCss from './tokens.css?raw'
 
@@ -22,6 +23,13 @@ function blockAfter(css: string, from: number): string {
   throw new Error('unbalanced braces')
 }
 
+/** The share of Ghost in the wingman logbook tag's text color, mixed with Ink in layout.css. */
+const wingmanTagGhost = (() => {
+  const m = /\.logbook-tag-wingman\s*\{[^}]*color:\s*color-mix\(in srgb, var\(--ghost\) (\d+)%, var\(--ink\)\)/.exec(layoutCss)
+  if (!m) throw new Error('no wingman tag color in layout.css')
+  return Number(m[1]) / 100
+})()
+
 const light = declarations(blockAfter(tokensCss, tokensCss.indexOf(':root')))
 // Dark redefines some tokens and inherits the rest from the light block.
 const dark = { ...light, ...declarations(blockAfter(tokensCss, tokensCss.indexOf('prefers-color-scheme: dark'))) }
@@ -37,6 +45,13 @@ function luminance(hex: string): number {
   if (!m) throw new Error(`not a #RRGGBB color: ${hex}`)
   const n = parseInt(m[1], 16)
   return 0.2126 * channel((n >> 16) & 255) + 0.7152 * channel((n >> 8) & 255) + 0.0722 * channel(n & 255)
+}
+
+/** `fg` at opacity `alpha` painted over `bg`, as `#RRGGBB`. */
+function over(fg: string, bg: string, alpha: number): string {
+  const rgb = (hex: string) => [0, 2, 4].map((i) => parseInt(hex.slice(1 + i, 3 + i), 16))
+  const [f, b] = [rgb(fg), rgb(bg)]
+  return `#${f.map((c, i) => Math.round(c * alpha + b[i] * (1 - alpha)).toString(16).padStart(2, '0')).join('')}`
 }
 
 /** WCAG contrast ratio between two `#RRGGBB` colors. */
@@ -78,6 +93,18 @@ describe.each([
   it.each(['bg', 'panel'])('focus is visible on %s', (bg) => {
     const best = Math.max(contrast(t.focus, t[bg]), contrast(t['focus-halo'], t[bg]))
     expect(best).toBeGreaterThanOrEqual(3)
+  })
+
+  it('the recorder altimeter dots, Muted at their opacity, are at least 3:1 on panel', () => {
+    expect(contrast(over(t.muted, t.panel, READING_ALPHA), t.panel)).toBeGreaterThanOrEqual(3)
+  })
+
+  it('the wingman logbook tag text, Ghost mixed toward Ink, is at least 4.5:1 on panel', () => {
+    expect(contrast(over(t.ghost, t.ink, wingmanTagGhost), t.panel)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('the wingman logbook tag border, Ghost, is at least 3:1 on panel', () => {
+    expect(contrast(t.ghost, t.panel)).toBeGreaterThanOrEqual(3)
   })
 
   it('focus on its halo is at least 3:1', () => {

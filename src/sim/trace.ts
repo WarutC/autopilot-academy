@@ -9,6 +9,8 @@ export interface TraceBuffer {
   readonly hMeas: Float64Array
   readonly hEst: Float64Array
   readonly u: Float64Array
+  readonly noise: Float64Array
+  readonly kalman: Float64Array
 }
 
 /** An empty trace with room for `rows` rows in every column. */
@@ -21,5 +23,7 @@ export function createTrace(rows: number): TraceBuffer {
     hMeas: new Float64Array(rows),
     hEst: new Float64Array(rows),
     u: new Float64Array(rows),
+    noise: new Float64Array(rows),
+    kalman: new Float64Array(rows),
   }
 }

@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { defaultParams } from '../algorithms/index.ts'
 import manual from '../algorithms/manual.ts'
+import p from '../algorithms/p.ts'
 import pid from '../algorithms/pid.ts'
+import type { LogEntry } from '../sim/scoring.ts'
+import { defaultConditions } from './conditions.ts'
 import { STORAGE_KEY, type StorageGetter } from './persistence.ts'
 import { createPhase, createStore } from './store.ts'
 
@@ -134,5 +137,146 @@ describe('createPhase', () => {
     expect(owner.phase).toBe('ready')
     owner.setPhase('paused')
     expect(owner.phase).toBe('paused')
+  })
+})
+
+describe('Store conditions', () => {
+  it('starts calm', () => {
+    expect(createStore(modules, fakeStorage().get).conditions).toEqual(defaultConditions())
+  })
+
+  it('clamps and snaps a condition and ignores an unknown key or a non-finite value', () => {
+    const store = createStore(modules, fakeStorage().get)
+    store.setCondition('gusts', 99)
+    store.setCondition('down', 0.3)
+    store.setCondition('nope', 1)
+    store.setCondition('down', NaN)
+    store.setCondition('gusts', Infinity)
+    expect(store.conditions).toEqual({ ...defaultConditions(), gusts: 20, down: 0.5 })
+    expect(store.conditions).not.toHaveProperty('nope')
+  })
+
+  it('remembers a condition across stores and leaves other settings alone', () => {
+    const fake = fakeStorage()
+    const store = createStore(modules, fake.get)
+    store.setParam('pid', 'Kp', 0.5)
+    store.setCourse(202)
+    store.setCondition('gusts', 4)
+    const again = createStore(modules, fake.get)
+    expect(again.conditions.gusts).toBe(4)
+    expect(again.params('pid')).toEqual({ ...pidDefaults, Kp: 0.5 })
+    expect(again.course).toBe(202)
+    expect(JSON.parse(fake.items.get(STORAGE_KEY)!).version).toBe(1)
+  })
+
+  it('never mutates a conditions record it handed out, and skips an unchanged value', () => {
+    const fake = fakeStorage()
+    const store = createStore(modules, fake.get)
+    const before = store.conditions
+    store.setCondition('gusts', 0)
+    expect(store.conditions).toBe(before)
+    expect(fake.items.has(STORAGE_KEY)).toBe(false)
+    store.setCondition('gusts', 5)
+    expect(before.gusts).toBe(0)
+    expect(store.conditions).not.toBe(before)
+  })
+
+  it('keeps working in memory when storage is blocked', () => {
+    const store = createStore(modules, (): never => {
+      throw new Error('blocked')
+    })
+    store.setCondition('down', 3)
+    expect(store.conditions.down).toBe(3)
+  })
+})
+
+describe('store wingman', () => {
+  const withP = [manual, p, pid]
+
+  it('starts with no wingman', () => {
+    expect(createStore(withP, fakeStorage().get).wingman).toBeNull()
+  })
+
+  it('remembers the wingman across a reload', () => {
+    const fake = fakeStorage()
+    createStore(withP, fake.get).setWingman('p')
+    expect(JSON.parse(fake.items.get(STORAGE_KEY)!).wingman).toBe('p')
+    expect(createStore(withP, fake.get).wingman).toBe('p')
+  })
+
+  it('ignores an id that is unregistered or lacks Autopilot, and skips an unchanged value', () => {
+    const fake = fakeStorage()
+    const store = createStore(withP, fake.get)
+    store.setWingman('nope')
+    store.setWingman('manual')
+    store.setWingman(null)
+    expect(store.wingman).toBeNull()
+    expect(fake.items.has(STORAGE_KEY)).toBe(false)
+    store.setWingman('pid')
+    store.setWingman(null)
+    expect(store.wingman).toBeNull()
+  })
+
+  it('keeps the wingman in memory when storage is blocked', () => {
+    const store = createStore(withP, (): never => {
+      throw new Error('blocked')
+    })
+    store.setWingman('p')
+    expect(store.wingman).toBe('p')
+  })
+})
+
+describe('Store best scores and logbook', () => {
+  const row = (lesson: string): LogEntry => ({
+    lesson,
+    mode: 'autopilot',
+    course: 101,
+    points: 50,
+    rings: 10,
+    ringsTotal: 10,
+    iae: 100,
+    energy: 2,
+    tags: [],
+  })
+
+  it('starts with no best scores and an empty logbook', () => {
+    const store = createStore(modules, fakeStorage().get)
+    expect(store.best).toEqual({})
+    expect(store.logbook).toEqual([])
+  })
+
+  it('saves a best score and restores it after a reload', () => {
+    const fake = fakeStorage()
+    const store = createStore(modules, fake.get)
+    const before = store.best
+    store.setBest('pid', 87.4)
+    expect(store.best).toEqual({ pid: 87.4 })
+    expect(before).toEqual({})
+    expect(JSON.parse(fake.items.get(STORAGE_KEY)!).best).toEqual({ pid: 87.4 })
+    expect(createStore(modules, fake.get).best).toEqual({ pid: 87.4 })
+  })
+
+  it('ignores an unregistered lesson or a non-finite value', () => {
+    const fake = fakeStorage()
+    const store = createStore(modules, fake.get)
+    store.setBest('ghost', 10)
+    store.setBest('pid', NaN)
+    store.setBest('pid', Infinity)
+    expect(store.best).toEqual({})
+    expect(fake.items.has(STORAGE_KEY)).toBe(false)
+  })
+
+  it('keeps the logbook as a copy in memory, never saved and empty after a reload', () => {
+    const fake = fakeStorage()
+    const store = createStore(modules, fake.get)
+    const rows = [row('pid'), row('p')]
+    store.setLogbook(rows)
+    rows.pop()
+    expect(store.logbook.map((r) => r.lesson)).toEqual(['pid', 'p'])
+    store.setCourse(202)
+    expect(JSON.parse(fake.items.get(STORAGE_KEY)!)).not.toHaveProperty('logbook')
+    const reloaded = createStore(modules, fake.get)
+    expect(reloaded.logbook).toEqual([])
+    expect(reloaded.course).toBe(202)
   })
 })

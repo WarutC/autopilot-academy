@@ -317,7 +317,7 @@ describe('createAutopilotCard with a contributed module', () => {
     )
     const root = card.element as unknown as FakeElement
     const byClass = (c: string) => root.all().filter((e) => e.className.split(' ').includes(c))
-    return { registry, warn, root, byClass }
+    return { registry, warn, card, root, byClass }
   }
 
   it('registers the module last, after MPC, as Community', () => {
@@ -342,6 +342,17 @@ describe('createAutopilotCard with a contributed module', () => {
     ])
     expect(chip.getAttribute('aria-label')).toBe(`Lesson ${n}, Damped P, Community`)
     expect(chip.textContent).not.toContain(dampedP.tag)
+  })
+
+  it('shows the best on a Community chip, which keeps its class', () => {
+    const { card, byClass } = setupCommunity()
+    const chips = byClass('lesson-chip')
+    const n = chips.length
+    card.setBests({ [dampedP.id]: 12 })
+    const chip = chips[n - 1]!
+    expect(chip.className.split(' ')).toContain('lesson-chip-community')
+    expect(chip.children.map((c) => (typeof c === 'string' ? c : c.textContent))).toEqual([`Lesson ${n}`, 'Damped P', 'Best 12.0'])
+    expect(chip.getAttribute('aria-label')).toBe(`Lesson ${n}, Damped P, Best 12.0`)
   })
 
   it('leaves built-in chips showing their own tag', () => {
@@ -370,5 +381,41 @@ describe('createAutopilotCard with a contributed module', () => {
       expect(slider.getAttribute('aria-label')).toBe(`${spec.accessibleName}, slider`)
       expect(Number(field.value)).toBe(spec.default)
     })
+  })
+})
+
+describe('AutopilotCard best scores', () => {
+  const text = (chip: FakeElement) => chip.children.map((c) => (typeof c === 'string' ? c : c.textContent))
+
+  it('shows "Best <score>" in place of the tag on a chip with a best score, in text and accessible name', () => {
+    const { card, chip } = setup()
+    const n = algorithms.findIndex((m) => m.id === 'pid') + 1
+    card.setBests({ pid: 87.44 })
+    expect(text(chip('pid'))).toEqual([`Lesson ${n}`, 'PID', 'Best 87.4'])
+    expect(chip('pid').getAttribute('aria-label')).toBe(`Lesson ${n}, PID, Best 87.4`)
+    const m = algorithms.findIndex((a) => a.id === 'manual')
+    expect(text(chip('manual'))[2]).toBe(algorithms[m]!.tag)
+    expect(chip('manual').getAttribute('aria-label')).toBe(`Lesson ${m + 1}, Manual, ${algorithms[m]!.tag}`)
+  })
+
+  it('puts the tag back when the best score is removed', () => {
+    const { card, chip } = setup()
+    const n = algorithms.findIndex((m) => m.id === 'pid') + 1
+    card.setBests({ pid: 87.44 })
+    card.setBests({})
+    expect(text(chip('pid'))[2]).toBe(pid.tag)
+    expect(chip('pid').getAttribute('aria-label')).toBe(`Lesson ${n}, PID, ${pid.tag}`)
+  })
+
+  it('leaves the chips alone when the shown text is unchanged', () => {
+    const { card, byClass } = setup()
+    card.setBests({ pid: 87.44 })
+    const textWrites = vi.spyOn(FakeElement.prototype, 'textContent', 'set')
+    const attrWrites = byClass('lesson-chip').map((b) => vi.spyOn(b, 'setAttribute'))
+    card.setBests({ pid: 87.44 })
+    card.setBests({ pid: 87.41 })
+    expect(textWrites).not.toHaveBeenCalled()
+    for (const spy of attrWrites) expect(spy).not.toHaveBeenCalled()
+    textWrites.mockRestore()
   })
 })

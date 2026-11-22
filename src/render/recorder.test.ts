@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { createTrace } from '../sim/trace.ts'
 import type { Snapshot, Trace } from '../sim/types.ts'
-import { LIGHT } from '../ui/theme.ts'
+import { LIGHT, type Theme } from '../ui/theme.ts'
 import { fixtureSnapshot } from './fixture.ts'
 import { RECORDER_FONT, RECORDER_LINE } from './recorder-geometry.ts'
-import { draw } from './recorder.ts'
+import { READING_ALPHA, draw } from './recorder.ts'
 import { SCENE } from './scene.ts'
 
 /** A copy of `trace` whose elevator column swings between -1 and 1. */
@@ -22,6 +22,9 @@ function elevatorTrace(trace: Trace): Trace {
   return copy
 }
 
+/** A dark stand-in: the light theme with its line colors swapped for others. */
+const DARK: Theme = { ...LIGHT, panel: '#14181F', ink: '#E8ECF2', accent: '#5AB0FF', amber: '#FFB03A', muted: '#9AA4B2' }
+
 const withMarkers = (markers: Snapshot['markers'], s: Snapshot = fixtureSnapshot()): Snapshot => ({ ...s, markers })
 
 /** A 2D context stand-in that records method calls, the text of `fillText`, and `lineWidth`, `font`, `strokeStyle` and `fillStyle` sets. */
@@ -33,11 +36,12 @@ function recordingContext(): { ctx: CanvasRenderingContext2D; calls: string[] } 
       return (...args: unknown[]) => {
         calls.push(String(key))
         if (key === 'fillText') calls.push(`text=${String(args[0])}`)
+        if (key === 'fillRect' || key === 'setLineDash') calls.push(`${String(key)}=${JSON.stringify(args)}`)
         return key === 'measureText' ? { width: String(args[0]).length * 9 } : undefined
       }
     },
     set(target, key, value) {
-      if (key === 'lineWidth' || key === 'font' || key === 'strokeStyle' || key === 'fillStyle') calls.push(`${String(key)}=${String(value)}`)
+      if (key === 'lineWidth' || key === 'font' || key === 'strokeStyle' || key === 'fillStyle' || key === 'globalAlpha') calls.push(`${String(key)}=${String(value)}`)
       target[key] = value
       return true
     },
@@ -106,5 +110,86 @@ describe('recorder draw', () => {
     expect(calls).not.toContain('text=Altitude')
     expect(calls).not.toContain('text=Elevator')
     expect(calls).not.toContain(`fillStyle=${SCENE.ringHit}`)
+  })
+
+  it('strokes the wingman line in the ghost color under the altitude line, with a Wingman legend entry', () => {
+    const base = fixtureSnapshot()
+    const player = base.planes[0]!
+    const s = { ...base, planes: [player, { ...player, id: 'wingman' as const }], trace: { player: base.trace.player!, wingman: base.trace.player! } }
+    const { ctx, calls } = recordingContext()
+    draw(ctx, s, LIGHT, { width: 1000, height: 240, dpr: 1 })
+    const ghost = calls.indexOf(`strokeStyle=${LIGHT.ghost}`)
+    expect(ghost).toBeGreaterThan(-1)
+    expect(ghost).toBeLessThan(calls.indexOf(`strokeStyle=${LIGHT.accent}`))
+    expect(calls[ghost - 1]).toBe(`lineWidth=${RECORDER_LINE.altitude}`)
+    expect(calls).toContain('text=Wingman')
+  })
+
+  it('has no ghost line or Wingman entry without a wingman', () => {
+    const { ctx, calls } = recordingContext()
+    draw(ctx, fixtureSnapshot(), LIGHT, { width: 1000, height: 240, dpr: 1 })
+    expect(calls).not.toContain(`strokeStyle=${LIGHT.ghost}`)
+    expect(calls).not.toContain('text=Wingman')
+  })
+
+  /** The fixture with noise 2 and the filter on: readings 1 m high, the estimate 0.5 m low from row 10. */
+  function sensorSnapshot(kalman: number): Snapshot {
+    const base = fixtureSnapshot()
+    const tr = base.trace.player!
+    const copy = createTrace(tr.length)
+    copy.length = tr.length
+    for (let i = 0; i < tr.length; i++) {
+      copy.t[i] = tr.t[i]
+      copy.ref[i] = tr.ref[i]
+      copy.h[i] = tr.h[i]
+      copy.hMeas[i] = tr.h[i] + 1
+      copy.hEst[i] = i >= 10 && kalman ? tr.h[i] - 0.5 : copy.hMeas[i]
+      copy.u[i] = tr.u[i]
+      copy.noise[i] = 2
+      copy.kalman[i] = i >= 10 && kalman ? 1 : 0
+    }
+    return { ...base, trace: { player: copy }, conditions: { ...base.conditions, noise: 2, kalman } }
+  }
+
+  it('paints readings as gray dots under the lines and the estimate in Amber above the altitude', () => {
+    for (const theme of [LIGHT, DARK]) {
+      const { ctx, calls } = recordingContext()
+      draw(ctx, sensorSnapshot(1), theme, { width: 1000, height: 240, dpr: 1 })
+      const alpha = calls.indexOf(`globalAlpha=${READING_ALPHA}`)
+      expect(alpha).toBeGreaterThan(-1)
+      expect(calls[alpha + 1]).toBe(`fillStyle=${theme.muted}`)
+      const dots = calls.filter((c) => c.startsWith('fillRect=[') && JSON.parse(c.slice('fillRect='.length))[2] === 4)
+      expect(dots.length).toBe(Math.ceil(sensorSnapshot(1).trace.player!.length / 3))
+      for (const d of dots) expect(JSON.parse(d.slice('fillRect='.length))[3]).toBe(4)
+      const accent = calls.indexOf(`strokeStyle=${theme.accent}`)
+      const amber = calls.indexOf(`strokeStyle=${theme.amber}`)
+      expect(alpha).toBeLessThan(accent)
+      expect(accent).toBeLessThan(amber)
+      expect(calls[amber - 1]).toBe(`lineWidth=${RECORDER_LINE.estimate}`)
+      expect(amber).toBeLessThan(calls.indexOf(`strokeStyle=${theme.muted}`, amber))
+      const legend = calls.filter((c) => c.startsWith('text=')).slice(-5)
+      expect(legend).toEqual(['text=Target', 'text=Altitude', 'text=Altimeter', 'text=Kalman estimate', 'text=Elevator'])
+      // The altimeter swatch is dotted, in the reading gray.
+      expect(calls.join('\n')).toContain(`setLineDash=[[3,5]]\nlineWidth=3\nstrokeStyle=${theme.muted}`)
+    }
+  })
+
+  it('has no dots, estimate or entries without noise or the filter', () => {
+    const { ctx, calls } = recordingContext()
+    draw(ctx, fixtureSnapshot(), LIGHT, { width: 1000, height: 240, dpr: 1 })
+    expect(calls).not.toContain(`globalAlpha=${READING_ALPHA}`)
+    expect(calls).not.toContain(`strokeStyle=${LIGHT.amber}`)
+    expect(calls).not.toContain('text=Altimeter')
+    expect(calls).not.toContain('text=Kalman estimate')
+  })
+
+  it('never writes into the snapshot', () => {
+    const s = sensorSnapshot(1)
+    const t = s.trace.player!
+    const cols = () => [t.t, t.h, t.hMeas, t.hEst, t.u, t.noise, t.kalman].map((c) => Array.from(c))
+    const before = JSON.stringify([s.conditions, s.planes, s.markers, cols()])
+    const { ctx } = recordingContext()
+    draw(ctx, s, LIGHT, { width: 1000, height: 240, dpr: 1 })
+    expect(JSON.stringify([s.conditions, s.planes, s.markers, cols()])).toBe(before)
   })
 })

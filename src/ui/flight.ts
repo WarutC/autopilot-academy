@@ -5,7 +5,7 @@
 
 import { PLANT } from '../sim/plant.ts'
 import { createRun, type Run, type RunPlayer } from '../sim/run.ts'
-import type { FlightMode, Snapshot, StickInput } from '../sim/types.ts'
+import type { Conditions, FlightMode, Snapshot, StickInput } from '../sim/types.ts'
 import type { Stick } from './input.ts'
 import { createPhase, type Phase, type PhaseOwner } from './store.ts'
 
@@ -101,17 +101,20 @@ export interface PlayerInputs {
   readonly player: RunPlayer
   readonly setpoint: number
   readonly stick: StickInput
+  readonly conditions: Conditions
+  /** A second autopilot flown beside the player, or none. */
+  readonly wingman?: RunPlayer
 }
 
 /**
  * The `makeRun` for `createFlight`: every new run takes the player's live
  * inputs, so a button held across Fly counts from the first step and the
- * setpoint holds across runs.
+ * setpoint and the flight conditions hold across runs.
  */
 export function playerRuns(inputs: () => PlayerInputs): () => Run {
   return () => {
-    const { course, mode, player, setpoint, stick } = inputs()
-    const run = createRun({ course, mode, player })
+    const { course, mode, player, setpoint, stick, conditions, wingman } = inputs()
+    const run = createRun({ course, mode, player, conditions, wingman })
     run.setSetpoint(setpoint)
     run.setInput(stick)
     return run

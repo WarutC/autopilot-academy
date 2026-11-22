@@ -1,5 +1,6 @@
-// The Autopilot card: the lesson chips, then the selected module's name, its
-// lesson, one row per parameter and a reset button. Built from the registry
+// The Autopilot card: the lesson chips (each showing its tag, or its best
+// score once it has one), then the selected module's name, its lesson, one row
+// per parameter and a reset button. Built from the registry
 // and each module's `ParamSpec` list only, so every algorithm gets the same
 // panel.
 
@@ -22,6 +23,8 @@ export interface AutopilotCard {
   setLesson(module: AlgorithmModule, params: Params): void
   /** In flight, every chip but the selected one is disabled. */
   setPhase(phase: Phase): void
+  /** Each chip with a best score reads "Best 87.4" in place of its tag; the others show their tag. */
+  setBests(best: Readonly<Record<string, number>>): void
 }
 
 interface Row {
@@ -98,14 +101,15 @@ export function createAutopilotCard(
       return span
     })
     b.append(...lines)
-    b.setAttribute('aria-label', `Lesson ${i + 1}, ${m.name}, ${tag}`)
+    const prefix = `Lesson ${i + 1}, ${m.name}`
+    b.setAttribute('aria-label', `${prefix}, ${tag}`)
     b.addEventListener('click', () => {
       // In flight only the selected chip is live, and picking it changes nothing.
       if (inFlight(phase) && m.id !== module.id) return
       handlers.select(m.id)
     })
     chipGroup.append(b)
-    return { id: m.id, b }
+    return { id: m.id, b, tagSpan: lines[2]!, tag, prefix }
   })
 
   const name = doc.createElement('h3')
@@ -297,6 +301,15 @@ export function createAutopilotCard(
     setPhase(next) {
       phase = next
       syncChips()
+    },
+    setBests(best) {
+      for (const chip of chips) {
+        const points = best[chip.id]
+        const text = points !== undefined && Number.isFinite(points) ? `Best ${points.toFixed(1)}` : chip.tag
+        if (chip.tagSpan.textContent === text) continue
+        chip.tagSpan.textContent = text
+        chip.b.setAttribute('aria-label', `${chip.prefix}, ${text}`)
+      }
     },
   }
 }

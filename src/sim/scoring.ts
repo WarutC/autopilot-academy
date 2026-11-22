@@ -77,6 +77,7 @@ export function summarize(run: ScoredRun, plane: PlaneId = 'player'): LogEntry |
   const r = run.result(plane)
   if (!r) return undefined
   const tags: string[] = []
+  if (plane === 'wingman') tags.push('wingman')
   if (r.status === 'crashed') tags.push('crashed')
   if (r.retuned) tags.push('retuned')
   if (r.mode === 'semi-auto') tags.push('semi-auto')
@@ -91,4 +92,15 @@ export function summarize(run: ScoredRun, plane: PlaneId = 'player'): LogEntry |
     energy: r.energy,
     tags,
   }
+}
+
+/**
+ * True when `result` may raise a best score: the player's own flight, finished,
+ * never retuned, flown in Autopilot or Manual. Wingman, crashed, unfinished,
+ * retuned and Semi-auto flights never count.
+ */
+export function isBestEligible(result: PlaneResult | undefined, plane: PlaneId): boolean {
+  if (!result || plane !== 'player') return false
+  if (result.status !== 'finished' || result.retuned) return false
+  return result.mode === 'autopilot' || result.mode === 'manual'
 }

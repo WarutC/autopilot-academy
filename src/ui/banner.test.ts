@@ -107,6 +107,43 @@ describe('bannerContent', () => {
   })
 })
 
+describe('bannerContent: wingman', () => {
+  const wingman = (status: PlaneResult['status'], points: number) => ({ name: 'P', result: { ...result(status, points), lesson: 'p' } })
+
+  it('appends the wingman score to Mission complete', () => {
+    expect(bannerContent('ended', result('finished', 74.2, 8, 10), undefined, wingman('finished', 61))).toEqual({
+      title: 'Mission complete',
+      body: '74.2 points, 8 of 10 rings. Wingman P: 61.0 points.',
+    })
+  })
+
+  it('says when the wingman crashed', () => {
+    expect(bannerContent('ended', result('finished', 74.2, 8, 10), undefined, wingman('crashed', 12.25))?.body).toBe(
+      '74.2 points, 8 of 10 rings. Wingman P crashed with 12.3 points.',
+    )
+  })
+
+  it('appends the wingman score to Crashed, keeping the Retuned note', () => {
+    expect(bannerContent('ended', result('crashed', 12, 2), undefined, wingman('finished', 61))).toEqual({
+      title: 'Crashed',
+      body: 'The aircraft left the safe altitude band. Retune and fly again. Wingman P: 61.0 points.',
+    })
+    const retuned = { ...result('crashed', 12, 2), retuned: true }
+    expect(bannerContent('ended', retuned, undefined, wingman('crashed', 4))).toEqual({
+      title: 'Crashed',
+      body: 'The aircraft left the safe altitude band. Retune and fly again. Wingman P crashed with 4.0 points.',
+      note: 'Retuned',
+    })
+  })
+
+  it('changes nothing in the other banners', () => {
+    const w = wingman('finished', 61)
+    expect(bannerContent('ready', undefined, undefined, w)).toEqual(bannerContent('ready', undefined))
+    expect(bannerContent('paused', result('flying'), undefined, w)).toEqual(bannerContent('paused', result('flying')))
+    expect(bannerContent('running', result('flying'), undefined, w)).toBeUndefined()
+  })
+})
+
 describe('banner end to end', () => {
   it('gives PID on course 101 the same Mission complete text at x1 and x4', () => {
     const a = createFlight(runWith(pid))

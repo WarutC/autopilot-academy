@@ -6,16 +6,22 @@ import { draw as drawScene } from './render/scene.ts'
 import { draw as drawSplane } from './render/splane.ts'
 import { PLANT, SETPOINT_MAX, SETPOINT_MIN } from './sim/plant.ts'
 import type { Run, RunPlayer } from './sim/run.ts'
+import type { PlaneResult } from './sim/scoring.ts'
 import type { FlightMode, Snapshot } from './sim/types.ts'
 import { watchAutoPause } from './ui/auto-pause.ts'
 import { createAutopilotCard } from './ui/autopilot-card.ts'
 import { bannerContent, createBanner } from './ui/banner.ts'
+import { createConditionsCard } from './ui/conditions-card.ts'
 import { createDrawer, PHONE_LANDSCAPE } from './ui/drawer.ts'
+import { createFlightSettings } from './ui/flight-settings.ts'
 import { createFlight, inFlight, pauseForInterruption, playerRuns, type Phase } from './ui/flight.ts'
 import { createStick, gameKey, typingTarget } from './ui/input.ts'
+import { createLogbookCard } from './ui/logbook-card.ts'
+import { createEndedRunStep } from './ui/logbook.ts'
 import { createModeSwitch } from './ui/mode-switch.ts'
 import { createPoleReadout, lessonAnalysis } from './ui/pole-readout.ts'
 import { browserStorage, validCourse } from './ui/persistence.ts'
+import { createRedraw } from './ui/redraw.ts'
 import { createRouter, drawCourse, followAddress, parseRoute } from './ui/router.ts'
 import { createScoreMirror } from './ui/score-mirror.ts'
 import { createSetpointSlider } from './ui/setpoint-slider.ts'
@@ -24,6 +30,7 @@ import { createStore } from './ui/store.ts'
 import { loadTheme, watchTheme } from './ui/theme.ts'
 import { createToolbar } from './ui/toolbar.ts'
 import { createTuningHandlers } from './ui/tuning.ts'
+import { createWingmanCard, wingmanPlayer } from './ui/wingman-card.ts'
 
 const canvas = document.createElement('canvas')
 canvas.className = 'scene'
@@ -69,13 +76,17 @@ recorderCard.append(recorderTitle, recorderBody)
 
 /** The address: `#/lesson/<id>?course=<n>`, rewritten after every lesson or course change. */
 const router = createRouter(window)
-/** The remembered lesson, modes, params and course, and the flight phase. */
+/** The remembered lesson, modes, params, course and best scores, the session's logbook and the flight phase. */
 const store = createStore(algorithms, browserStorage, { onRouteChange: (l, c) => router.write(l, c) })
 // On load the address wins over the remembered lesson and course.
 const route = parseRoute(router.read(), algorithms)
 if (route.lesson !== undefined) store.setLesson(route.lesson)
 if (route.course !== undefined) store.setCourse(route.course)
 router.write(store.lesson, store.course)
+/** What the next frame redraws; the Pole readout only when asked through `requestReadout`. */
+const redraw = createRedraw()
+const requestDraw = redraw.request
+const requestReadout = redraw.requestReadout
 /** The selected lesson. */
 let lesson: AlgorithmModule = findAlgorithm(store.lesson) ?? algorithms[0]!
 /** The player's autopilot; each Fly starts a run with the current one. */
@@ -97,7 +108,15 @@ const stick = createStick((value) => {
 })
 
 const flight = createFlight(
-  playerRuns(() => ({ course: store.course, mode: runMode(), player, setpoint, stick: stick.value })),
+  playerRuns(() => ({
+    course: store.course,
+    mode: runMode(),
+    player,
+    setpoint,
+    stick: stick.value,
+    conditions: store.conditions,
+    wingman: wingmanPlayer(algorithms, store.wingman, (id) => store.params(id)),
+  })),
   store,
 )
 
@@ -157,6 +176,30 @@ side.append(autopilotCard.element)
 const poleReadout = createPoleReadout(document)
 const poleCtx = poleReadout.canvas.getContext('2d')!
 side.append(poleReadout.element)
+
+/** The Flight conditions and Wingman handlers: a finished run keeps what it flew; the next Fly takes the new settings. */
+const settings = createFlightSettings({
+  store,
+  flight,
+  clearFixture,
+  synced: syncUi,
+  redraw: requestDraw,
+})
+
+/** Every flight condition, from the downdraft to the Kalman filter's Q and R; a change reaches the current run at once and every later Fly. */
+const conditionsCard = createConditionsCard(document, store.conditions, settings.conditions)
+side.append(conditionsCard.element)
+
+/** The second autopilot flown beside the player; locked while a run flies. */
+const wingmanCard = createWingmanCard(document, algorithms, store.wingman, settings.wingman)
+side.append(wingmanCard.element)
+
+/** The session's newest flights; each ended run is logged once and may raise its lesson's best score. */
+const logbookCard = createLogbookCard(document, (id) => findAlgorithm(id)?.name)
+side.append(logbookCard.element)
+const logEndedRun = createEndedRunStep(store, { logbook: logbookCard.update, bests: autopilotCard.setBests })
+logbookCard.update(store.logbook)
+autopilotCard.setBests(store.best)
 
 /** Switches to another lesson outside a flight, from a chip or the address. */
 function selectLesson(id: string): void {
@@ -241,19 +284,6 @@ main.append(mirror.element)
 let theme = loadTheme()
 /** A dev-only fixture shown instead of the run while the flight is ready. */
 let fixture: Snapshot | undefined
-let needsDraw = true
-/** The Pole readout needs its text and plot rebuilt on the next draw. */
-let readoutDirty = true
-
-function requestDraw(): void {
-  needsDraw = true
-}
-
-/** Rebuilds the Pole readout on the next frame: after a parameter, lesson, theme or size change. */
-function requestReadout(): void {
-  readoutDirty = true
-  needsDraw = true
-}
 
 /** Drops the dev fixture, so the scene shows the run again. */
 function clearFixture(): void {
@@ -265,17 +295,26 @@ let bannerPhase: Phase | undefined
 let bannerRun: Run | undefined
 let bannerCourse: number | undefined
 
-/** Reflects the flight into the toolbar and the banner; cheap, so it runs every frame. */
+/** Reflects the flight into the toolbar, the banner and the logbook; cheap, so it runs every frame. */
 function syncUi(): void {
   toolbar.update(flight.phase, flight.speed, store.course)
   autopilotCard.setPhase(flight.phase)
+  wingmanCard.setPhase(flight.phase)
+  logEndedRun(flight.phase, flight.run)
   // The banner depends only on the phase, the run's result and a loaded course, so recompute it when one changes.
   if (flight.phase !== bannerPhase || flight.run !== bannerRun || loadedCourse !== bannerCourse) {
     bannerPhase = flight.phase
     bannerRun = flight.run
     bannerCourse = loadedCourse
-    banner.update(bannerContent(flight.phase, flight.run.result('player'), loadedCourse))
+    banner.update(bannerContent(flight.phase, flight.run.result('player'), loadedCourse, wingmanResult(flight.run)))
   }
+}
+
+/** The wingman's name and result in `run`, or undefined when it flies none. */
+function wingmanResult(run: Run): { name: string; result: PlaneResult } | undefined {
+  const result = run.result('wingman')
+  if (!result) return undefined
+  return { name: findAlgorithm(result.lesson)?.name ?? result.lesson, result }
 }
 
 /** Sizes `el`'s backing store to its CSS size at the device pixel ratio; returns the size. */
@@ -296,8 +335,7 @@ function draw(): void {
   drawScene(ctx, snapshot, theme, fitCanvas(canvas))
   drawRecorder(recorderCtx, snapshot, theme, fitCanvas(recorderCanvas))
   mirror.update(snapshot)
-  if (readoutDirty) {
-    readoutDirty = false
+  if (redraw.takeReadout()) {
     // The selected lesson and its own params, not the flying algorithm's, so a dev controller never hides the readout.
     const analysis = lessonAnalysis(lesson, store.params(lesson.id))
     poleReadout.update(analysis)
@@ -312,10 +350,7 @@ function frame(time: number): void {
   lastTime = time
   const stepped = flight.advance(elapsed) > 0
   syncUi()
-  if (stepped || needsDraw) {
-    needsDraw = false
-    draw()
-  }
+  if (redraw.takeDraw(stepped)) draw()
   requestAnimationFrame(frame)
 }
 

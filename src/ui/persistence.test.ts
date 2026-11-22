@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { algorithms, defaultParams } from '../algorithms/index.ts'
+import lqr from '../algorithms/lqr.ts'
 import manual from '../algorithms/manual.ts'
+import mpc from '../algorithms/mpc.ts'
+import p from '../algorithms/p.ts'
 import pid from '../algorithms/pid.ts'
+import { defaultConditions } from './conditions.ts'
 import {
   defaultSettings,
   loadSettings,
+  mergeBest,
   mergeParams,
   parseSettings,
   saveSettings,
@@ -33,12 +38,15 @@ const stored = (data: unknown) => JSON.stringify(data)
 const pidDefaults = defaultParams(pid)
 
 describe('defaultSettings', () => {
-  it('is PID, no picked modes, course 101 and every module at its defaults', () => {
+  it('is PID, no picked modes, course 101, calm conditions and every module at its defaults', () => {
     expect(defaultSettings(modules)).toEqual({
       lesson: 'pid',
       modes: {},
       params: { manual: {}, pid: pidDefaults },
       course: 101,
+      conditions: defaultConditions(),
+      wingman: null,
+      best: {},
     })
   })
 
@@ -156,6 +164,9 @@ describe('loadSettings and saveSettings', () => {
     modes: { pid: 'semi-auto' },
     params: { manual: {}, pid: { ...pidDefaults, Kp: 0.5 } },
     course: 202,
+    conditions: { ...defaultConditions(), down: 2.5, gusts: 4 },
+    wingman: 'pid',
+    best: { pid: 87.4 },
   }
 
   it('round-trips through storage', () => {
@@ -184,5 +195,75 @@ describe('loadSettings and saveSettings', () => {
     const storage = { getItem: throwing, setItem: throwing } as unknown as Storage
     expect(loadSettings(() => storage, modules)).toEqual(defaultSettings(modules))
     expect(saveSettings(() => storage, custom)).toBe(false)
+  })
+})
+
+describe('stored conditions', () => {
+  it('merges stored conditions over the defaults, clamped, dropping bad values and unknown keys', () => {
+    const s = parseSettings(stored({ version: 1, conditions: { gusts: 'x', down: 50, zzz: 1, kq: 0.01 } }), modules)
+    expect(s.conditions).toEqual({ ...defaultConditions(), down: 10, kq: 0.1 })
+    expect(s.conditions).not.toHaveProperty('zzz')
+  })
+
+  it.each([null, 3, 'calm', [1, 2]])('falls back to the defaults when conditions are %j', (conditions) => {
+    expect(parseSettings(stored({ version: 1, conditions }), modules).conditions).toEqual(defaultConditions())
+  })
+
+  it('keeps the stored conditions when the rest of the settings load', () => {
+    const s = parseSettings(stored({ version: 1, course: 202, conditions: { gusts: 4 } }), modules)
+    expect(s.course).toBe(202)
+    expect(s.conditions).toEqual({ ...defaultConditions(), gusts: 4 })
+  })
+})
+
+describe('wingman setting', () => {
+  const withP = [manual, p, pid]
+
+  it('keeps a stored wingman that is a registered lesson offering Autopilot', () => {
+    expect(parseSettings(stored({ version: 1, wingman: 'p' }), withP).wingman).toBe('p')
+  })
+
+  it('loads null for an unregistered, Manual-only or non-string wingman', () => {
+    for (const wingman of ['nope', 'manual', 42, true, {}]) {
+      expect(parseSettings(stored({ version: 1, wingman }), withP).wingman).toBeNull()
+    }
+    expect(parseSettings(stored({ version: 1 }), withP).wingman).toBeNull()
+  })
+
+  it('writes the wingman into the saved JSON', () => {
+    const fake = fakeStorage()
+    saveSettings(fake.get, { ...defaultSettings(withP), wingman: 'p' })
+    expect(JSON.parse(fake.items.get(STORAGE_KEY)!)).toMatchObject({ version: 1, wingman: 'p' })
+    expect(loadSettings(fake.get, withP).wingman).toBe('p')
+  })
+})
+
+describe('best scores', () => {
+  const withMore = [manual, p, pid, lqr, mpc]
+
+  it('keeps finite numbers for registered lessons and drops everything else', () => {
+    const best = { pid: 87.4, ghost: 3, p: NaN, lqr: '9', mpc: Infinity }
+    expect(mergeBest(best, withMore)).toEqual({ pid: 87.4 })
+    // NaN and Infinity become null in JSON, which is dropped too.
+    expect(parseSettings(stored({ version: 1, best }), withMore).best).toEqual({ pid: 87.4 })
+  })
+
+  it.each([null, 3, 'best', [87.4]])('loads no best scores when best is %j', (best) => {
+    expect(parseSettings(stored({ version: 1, best }), modules).best).toEqual({})
+  })
+
+  it('round-trips the best scores through storage', () => {
+    const fake = fakeStorage()
+    saveSettings(fake.get, { ...defaultSettings(withMore), best: { pid: 87.4, p: 12 } })
+    expect(JSON.parse(fake.items.get(STORAGE_KEY)!)).toMatchObject({ version: 1, best: { pid: 87.4, p: 12 } })
+    expect(loadSettings(fake.get, withMore).best).toEqual({ pid: 87.4, p: 12 })
+  })
+
+  it('loads an older object without best with no best scores and keeps the rest', () => {
+    const s = parseSettings(stored({ version: 1, course: 202, wingman: 'pid', conditions: { gusts: 4 } }), modules)
+    expect(s.best).toEqual({})
+    expect(s.course).toBe(202)
+    expect(s.wingman).toBe('pid')
+    expect(s.conditions).toEqual({ ...defaultConditions(), gusts: 4 })
   })
 })

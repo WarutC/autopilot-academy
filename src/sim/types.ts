@@ -75,6 +75,10 @@ export interface Trace {
   readonly hMeas: TraceColumn
   readonly hEst: TraceColumn
   readonly u: TraceColumn
+  /** The altimeter noise σ the row was read with, in meters; 0 for a perfect reading. */
+  readonly noise: TraceColumn
+  /** 1 where the Kalman filter produced the row's estimate, else 0. */
+  readonly kalman: TraceColumn
 }
 
 export interface PlaneSnapshot {
@@ -106,11 +110,30 @@ export interface Marker {
   readonly label: string
 }
 
+/**
+ * The flight conditions a run flies in. `down` is a steady downdraft and
+ * `gusts` the rms of a random vertical gust, both in m/s². `noise` is the
+ * altimeter noise σ in meters; `kalman` (0 or 1) turns the Kalman filter on,
+ * with process noise `kq` and assumed sensor variance `kr` in m².
+ */
+export interface Conditions {
+  readonly down: number
+  readonly gusts: number
+  readonly noise: number
+  readonly kalman: number
+  readonly kq: number
+  readonly kr: number
+}
+
 export interface Snapshot {
   readonly t: number
   readonly course: number
+  /** The player first, then the wingman if the run has one; the wingman always flies Autopilot. */
   readonly planes: readonly PlaneSnapshot[]
   readonly rings: readonly Ring[]
   readonly markers: readonly Marker[]
+  /** One trace per plane in `planes`; there is no `wingman` key without a wingman. */
   readonly trace: Readonly<Partial<Record<PlaneId, Trace>>>
+  /** The run's current flight conditions. */
+  readonly conditions: Readonly<Conditions>
 }

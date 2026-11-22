@@ -1,5 +1,8 @@
-// One flight: the plant and its controller stepped on a fixed clock, with the
-// recorder trace, ring scoring and the crash and finish checks.
+// One flight: the player's plane, and optionally a wingman beside it, each a
+// plant and its controller stepped on one fixed clock over the same course and
+// conditions, with per-plane recorder traces, ring scoring and the crash and
+// finish checks. Each plane reads its altitude through its own noisy altimeter
+// and, when the Kalman filter is on, its controller sees the filter's estimate.
 
 import { clamp } from './clamp.ts'
 import { makeCourse, refAt, type Course } from './course.ts'
@@ -11,8 +14,11 @@ import {
   type PlaneResult,
   type ScoredRun,
 } from './scoring.ts'
+import { createKalman, stepKalman, type KalmanState } from './kalman.ts'
+import { gauss, stream, type Rng } from './rng.ts'
 import { createTrace, type TraceBuffer } from './trace.ts'
 import type {
+  Conditions,
   ControlContext,
   Controller,
   FlightMode,
@@ -28,6 +34,21 @@ import type {
 
 /** Physics steps per control tick. */
 const CONTROL_EVERY = Math.round(PLANT.Tc / PLANT.dt)
+
+/** Calm air and a perfect altimeter: the conditions a run flies when none are given. */
+export const CALM: Readonly<Conditions> = Object.freeze({ down: 0, gusts: 0, noise: 0, kalman: 0, kq: 10, kr: 4 })
+
+/** `base` with each finite value of a known key in `over` applied. */
+function withConditions(base: Readonly<Conditions>, over: Partial<Record<string, unknown>> | undefined): Readonly<Conditions> {
+  const next: Record<string, number> = { ...base }
+  if (over) {
+    for (const key of Object.keys(CALM)) {
+      const value = over[key]
+      if (typeof value === 'number' && Number.isFinite(value)) next[key] = value
+    }
+  }
+  return Object.freeze(next as unknown as Conditions)
+}
 
 /** What a run needs from an algorithm; an algorithm module satisfies it. */
 export interface RunAlgorithm {
@@ -45,14 +66,28 @@ export interface RunOptions {
   readonly course: number
   readonly mode: FlightMode
   readonly player: RunPlayer
+  /** Flight conditions; any key left out is calm. */
+  readonly conditions?: Partial<Conditions>
+  /**
+   * A second plane flown beside the player on the same course, conditions,
+   * gusts and clock. It always flies Autopilot against the course, whatever
+   * `mode` says, on a copy of `params` made here; `setParam`, `setInput` and
+   * `setSetpoint` never change it. Adding it never changes the player's flight.
+   */
+  readonly wingman?: RunPlayer
 }
 
 export interface Run extends ScoredRun {
-  /** Advances the flight by `n` physics steps; planes that are not flying stay frozen. */
+  /**
+   * Advances the flight by `n` physics steps, or fewer once no plane is flying;
+   * a plane that is not flying stays frozen while the other flies on.
+   */
   step(n?: number): void
+  /** Planes are `[player]`, or `[player, wingman]`; `trace.wingman` exists only with a wingman. */
   snapshot(): Snapshot
+  /** The plane's status (the player by default), or undefined for a plane the run does not have. */
   status(plane?: PlaneId): PlaneStatus | undefined
-  /** True when no plane is flying. */
+  /** True when no plane is flying: the player, and the wingman if there is one. */
   readonly done: boolean
   /**
    * Sets the player's parameter `key` to `value`; the controller reads it on
@@ -76,6 +111,14 @@ export interface Run extends ScoredRun {
    * value is ignored; others are clamped to [SETPOINT_MIN, SETPOINT_MAX].
    */
   setSetpoint(h: number): void
+  /**
+   * Sets the flight condition `key` (such as `gusts`) to `value`; the physics
+   * uses it from the next physics step, the altimeter noise and the Kalman
+   * filter from the next control tick, and the snapshot shows it at once. It
+   * never counts as a retune and drops no marker. An unknown key or a
+   * non-finite value is ignored.
+   */
+  setEnv(key: string, value: number): void
 }
 
 /** One plane: its plant, controller, estimator state, scoring and trace. */
@@ -100,6 +143,12 @@ interface Plane {
   vEst: number
   /** Previous measurement, or null before the first tick. */
   yPrev: number | null
+  /** The plane's own altimeter noise stream, drawn once per physics step. */
+  readonly sensorRng: Rng
+  /** This physics step's unit-variance altimeter sample. */
+  sensor: number
+  /** The Kalman filter while it is on, else null. */
+  kf: KalmanState | null
   ringIdx: number
   readonly results: RingResult[]
   points: number
@@ -113,32 +162,50 @@ export function createRun(options: RunOptions): Run {
   const { speed, dt, Tc } = PLANT
   const rows = Math.ceil(course.endX / speed / Tc) + 2
 
-  const params: Record<string, number> = { ...options.player.params }
-  const player: Plane = {
-    id: 'player',
-    lesson: options.player.algorithm.id,
-    mode: options.mode,
-    params,
-    controller: options.player.algorithm.create(params),
-    retuned: false,
-    stick: 0,
-    setpoint: PLANT.hStart,
-    status: 'flying',
-    plant: initialPlant(),
-    u: 0,
-    hMeas: PLANT.hStart,
-    hEst: PLANT.hStart,
-    vEst: 0,
-    yPrev: null,
-    ringIdx: 0,
-    results: [],
-    points: 0,
-    iae: 0,
-    energy: 0,
-    trace: createTrace(rows),
+  /** A fresh plane at the start, flying `from`'s algorithm on the run's own copy of its params. */
+  function makePlane(id: PlaneId, mode: FlightMode, from: RunPlayer): Plane {
+    const params: Record<string, number> = { ...from.params }
+    return {
+      id,
+      lesson: from.algorithm.id,
+      mode,
+      params,
+      controller: from.algorithm.create(params),
+      retuned: false,
+      stick: 0,
+      setpoint: PLANT.hStart,
+      status: 'flying',
+      plant: initialPlant(),
+      u: 0,
+      hMeas: PLANT.hStart,
+      hEst: PLANT.hStart,
+      vEst: 0,
+      yPrev: null,
+      sensorRng: stream(course.number, `sensor:${id}`),
+      sensor: 0,
+      kf: null,
+      ringIdx: 0,
+      results: [],
+      points: 0,
+      iae: 0,
+      energy: 0,
+      trace: createTrace(rows),
+    }
   }
-  const planes: readonly Plane[] = [player]
+
+  // The player is made first, so its controller never depends on the wingman's.
+  const player = makePlane('player', options.mode, options.player)
+  // The wingman always flies Autopilot: its reference is the course.
+  const wingman = options.wingman ? makePlane('wingman', 'autopilot', options.wingman) : undefined
+  const planes: readonly Plane[] = wingman ? [player, wingman] : [player]
   const markers: Marker[] = []
+  /** Replaced, never mutated, on each change, so a snapshot's record stays as it was. */
+  let conditions: Readonly<Conditions> = withConditions(CALM, options.conditions)
+  // One gust process per run, advanced once per physics step whatever the
+  // conditions say, so its sequence depends only on the course.
+  const gustRng = stream(course.number, 'gusts')
+  /** The unit-variance gust state. */
+  let gust = 0
 
   /** Physics steps taken so far; the clock is `k·dt`. */
   let k = 0
@@ -150,12 +217,20 @@ export function createRun(options: RunOptions): Run {
 
   function controlTick(p: Plane, t: number): void {
     const x = p.plant.x
-    // No sensor noise yet: the measurement is the true altitude.
-    const y = p.plant.h
-    p.vEst = p.yPrev === null ? 0 : (y - p.yPrev) / Tc
+    // The altimeter reading: the true altitude plus this step's noise sample.
+    const y = p.plant.h + conditions.noise * p.sensor
+    if (conditions.kalman) {
+      // Started from the current reading, then stepped with the previous command.
+      p.kf = stepKalman(p.kf ?? createKalman(y), y, p.u, conditions.kq, conditions.kr)
+      p.hEst = p.kf.h
+      p.vEst = p.kf.v
+    } else {
+      p.kf = null
+      p.hEst = y
+      p.vEst = p.yPrev === null ? 0 : (y - p.yPrev) / Tc
+    }
     p.yPrev = y
     p.hMeas = y
-    p.hEst = y
     const ref = refOf(p, x)
     const ctx: ControlContext = Object.freeze({
       t,
@@ -178,14 +253,16 @@ export function createRun(options: RunOptions): Run {
       tr.hMeas[i] = p.hMeas
       tr.hEst[i] = p.hEst
       tr.u[i] = p.u
+      tr.noise[i] = conditions.noise
+      tr.kalman[i] = p.kf ? 1 : 0
       tr.length = i + 1
     }
   }
 
-  function stepPlane(p: Plane, tick: boolean, t: number): void {
+  function stepPlane(p: Plane, tick: boolean, t: number, disturbance: number): void {
     if (p.status !== 'flying') return
     if (tick) controlTick(p, t)
-    p.plant = stepPlant(p.plant, p.u, 0)
+    p.plant = stepPlant(p.plant, p.u, disturbance)
     const { h, x } = p.plant
     p.iae = integrateError(p.iae, refOf(p, x), h, dt)
     p.energy = integrateEnergy(p.energy, p.u, dt)
@@ -213,7 +290,13 @@ export function createRun(options: RunOptions): Run {
   function physicsStep(): void {
     const tick = k % CONTROL_EVERY === 0
     const t = k * dt
-    for (const p of planes) stepPlane(p, tick, t)
+    gust += -gust * dt + Math.sqrt(2 * dt) * gauss(gustRng)
+    // Drawn once per step, before any plane steps: every plane flies the same air.
+    const disturbance = -conditions.down + conditions.gusts * gust
+    // One altimeter sample per plane per step, whatever the noise and whether the
+    // plane still flies, so each plane's sequence depends only on the course.
+    for (const p of planes) p.sensor = gauss(p.sensorRng)
+    for (const p of planes) stepPlane(p, tick, t, disturbance)
     k++
   }
 
@@ -257,7 +340,10 @@ export function createRun(options: RunOptions): Run {
         planes: planes.map(planeSnapshot),
         rings: course.rings,
         markers: markers.slice(),
-        trace: { player: traceView(player.trace) },
+        trace: wingman
+          ? { player: traceView(player.trace), wingman: traceView(wingman.trace) }
+          : { player: traceView(player.trace) },
+        conditions,
       }
     },
     status(plane: PlaneId = 'player') {
@@ -284,6 +370,11 @@ export function createRun(options: RunOptions): Run {
     setSetpoint(h) {
       if (typeof h !== 'number' || !Number.isFinite(h)) return
       player.setpoint = clamp(h, SETPOINT_MIN, SETPOINT_MAX)
+    },
+    setEnv(key, value) {
+      if (typeof key !== 'string' || !Object.hasOwn(CALM, key)) return
+      if (typeof value !== 'number' || !Number.isFinite(value)) return
+      conditions = withConditions(conditions, { [key]: value })
     },
     result(plane: PlaneId): PlaneResult | undefined {
       const p = find(plane)

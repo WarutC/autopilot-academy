@@ -3,7 +3,7 @@
 
 import { courseFromRings, refAt } from '../sim/course.ts'
 import { PLANT } from '../sim/plant.ts'
-import type { PlaneSnapshot, Snapshot } from '../sim/types.ts'
+import type { PlaneSnapshot, Snapshot, Trace } from '../sim/types.ts'
 
 /** Canvas size in CSS pixels, and the device pixels per CSS pixel. */
 export interface SceneSize {
@@ -48,6 +48,13 @@ export interface Badge {
   readonly r: number
 }
 
+export interface PlaneShape {
+  readonly x: number
+  readonly y: number
+  readonly angle: number
+  readonly length: number
+}
+
 export interface SceneGeometry {
   readonly width: number
   readonly height: number
@@ -57,8 +64,11 @@ export interface SceneGeometry {
   readonly rings: readonly RingShape[]
   readonly target: readonly Point[]
   readonly trail: readonly Point[]
-  readonly plane: { readonly x: number; readonly y: number; readonly angle: number; readonly length: number }
-  readonly hud: { readonly ring: string; readonly altitude: string }
+  readonly plane: PlaneShape
+  /** The wingman's plane and trail, only when the snapshot has a wingman. */
+  readonly wingman?: { readonly plane: PlaneShape; readonly trail: readonly Point[] }
+  /** `wingman` is the wingman's score line, only when the snapshot has a wingman. */
+  readonly hud: { readonly ring: string; readonly altitude: string; readonly wingman?: string }
   readonly score: string
   readonly badge: Badge
 }
@@ -99,6 +109,23 @@ function playerOf(snapshot: Snapshot): PlaneSnapshot | undefined {
   return snapshot.planes.find((p) => p.id === 'player')
 }
 
+/** The wingman plane, or undefined when the run has none. */
+function wingmanOf(snapshot: Snapshot): PlaneSnapshot | undefined {
+  return snapshot.planes.find((p) => p.id === 'wingman')
+}
+
+/**
+ * The course distance the camera follows: the player while it flies, else the
+ * wingman while it flies, else the plane further along (the player on a tie).
+ * Both planes fly at one speed, so the further one is the last that stopped.
+ */
+export function focusX(player: PlaneSnapshot | undefined, wingman: PlaneSnapshot | undefined): number {
+  const px = player?.x ?? 0
+  if (!wingman || player?.status === 'flying') return px
+  if (wingman.status === 'flying') return wingman.x
+  return wingman.x > px ? wingman.x : px
+}
+
 /** Altitude the scene height spans, m. */
 const VIEW_ALTITUDE = 110
 
@@ -135,7 +162,9 @@ export function sceneGeometry(snapshot: Snapshot, size: SceneSize): SceneGeometr
   const pv = player?.v ?? 0
   const results = player?.results ?? []
 
-  const cam = camera(W, H, px)
+  const wingman = wingmanOf(snapshot)
+
+  const cam = camera(W, H, focusX(player, wingman))
   const { sx, ky, camX } = cam
   const X = (x: number): number => (x - camX) * sx
   const Y = (h: number): number => altitudeY(H, h)
@@ -143,6 +172,13 @@ export function sceneGeometry(snapshot: Snapshot, size: SceneSize): SceneGeometr
 
   const planeX = X(px)
   const length = Math.max(46, H * 0.13)
+  const planeShape = (x: number, h: number, v: number): PlaneShape => ({
+    x: X(x),
+    y: Y(h),
+    angle: Math.atan2(v * ky, PLANT.speed * sx),
+    length,
+  })
+  const wingmanX = wingman ? X(wingman.x) : undefined
 
   const ry = PLANT.ringR * ky
   const rx = ry * 0.32
@@ -155,7 +191,7 @@ export function sceneGeometry(snapshot: Snapshot, size: SceneSize): SceneGeometr
     if (x < -cull || x > W + cull) return
     const result = results.find((r) => r.ring === index)
     const state: RingState = !result ? 'pending' : result.pass ? 'pass' : 'miss'
-    rings.push({ index, x, y: Y(ring.h), rx, ry, width: ringWidth, state, front: Math.abs(x - planeX) <= length })
+    rings.push({ index, x, y: Y(ring.h), rx, ry, width: ringWidth, state, front: Math.abs(x - planeX) <= length || (wingmanX !== undefined && Math.abs(x - wingmanX) <= length) })
   })
 
   const target: Point[] = []
@@ -169,19 +205,25 @@ export function sceneGeometry(snapshot: Snapshot, size: SceneSize): SceneGeometr
     target.push({ x: X(x1), y: Y(targetAt(x1)) })
   }
 
-  const trail: Point[] = []
-  const trace = snapshot.trace.player
-  if (trace && trace.length > 0) {
-    const from = camX - 5
-    let first = trace.length
-    while (first > 0 && PLANT.speed * trace.t[first - 1] >= from) first--
-    for (let i = first; i < trace.length; i++) trail.push({ x: X(PLANT.speed * trace.t[i]), y: Y(trace.h[i]) })
-    trail.push({ x: planeX, y: Y(ph) })
+  /** A plane's trail: its trace rows from just left of the view, then the plane itself; empty below 2 points. */
+  const trailOf = (trace: Trace | undefined, end: Point): Point[] => {
+    const trail: Point[] = []
+    if (trace && trace.length > 0) {
+      const from = camX - 5
+      let first = trace.length
+      while (first > 0 && PLANT.speed * trace.t[first - 1] >= from) first--
+      for (let i = first; i < trace.length; i++) trail.push({ x: X(PLANT.speed * trace.t[i]), y: Y(trace.h[i]) })
+      trail.push(end)
+    }
+    return trail.length >= 2 ? trail : []
   }
+  const trail = trailOf(snapshot.trace.player, { x: planeX, y: Y(ph) })
 
   const nRings = snapshot.rings.length || PLANT.nRings
   const ref = player?.ref ?? refAt(course, px)
   const r = Math.min(BADGE_RADIUS, Math.max(0, Math.min(W, H) / 2 - INSET))
+
+  const wingmanShape = wingman ? planeShape(wingman.x, wingman.h, wingman.v) : undefined
 
   return {
     width: W,
@@ -190,11 +232,15 @@ export function sceneGeometry(snapshot: Snapshot, size: SceneSize): SceneGeometr
     groundY: Y(1.5),
     rings,
     target,
-    trail: trail.length >= 2 ? trail : [],
-    plane: { x: planeX, y: Y(ph), angle: Math.atan2(pv * ky, PLANT.speed * sx), length },
+    trail,
+    plane: planeShape(px, ph, pv),
+    ...(wingman && wingmanShape
+      ? { wingman: { plane: wingmanShape, trail: trailOf(snapshot.trace.wingman, { x: wingmanShape.x, y: wingmanShape.y }) } }
+      : {}),
     hud: {
       ring: `Ring ${Math.min(results.length + 1, nRings)} / ${nRings}`,
       altitude: `Altitude ${ph.toFixed(0)} m, target ${ref.toFixed(0)} m`,
+      ...(wingman ? { wingman: `Wingman ${wingman.points.toFixed(1)}` } : {}),
     },
     score: scoreText(snapshot),
     badge: { x: W - INSET - r, y: H - INSET - r, r },

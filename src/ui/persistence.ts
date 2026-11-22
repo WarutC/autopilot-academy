@@ -3,7 +3,8 @@
 // throws: blocked, full or corrupt storage just means defaults.
 
 import { defaultParams, type AlgorithmModule } from '../algorithms/index.ts'
-import type { FlightMode } from '../sim/types.ts'
+import type { Conditions, FlightMode } from '../sim/types.ts'
+import { defaultConditions, mergeConditions } from './conditions.ts'
 import { clampValue } from './params.ts'
 
 export const STORAGE_KEY = 'autopilot-academy.v1'
@@ -22,6 +23,12 @@ export interface Settings {
   /** Every registered lesson's params, complete. */
   readonly params: Readonly<Record<string, Readonly<Record<string, number>>>>
   readonly course: number
+  /** The flight conditions, complete. */
+  readonly conditions: Conditions
+  /** The lesson flown as the wingman, always one offering Autopilot; null for none. */
+  readonly wingman: string | null
+  /** The best score per registered lesson; a lesson missing here has none yet. */
+  readonly best: Readonly<Record<string, number>>
 }
 
 /** Returns the storage, or undefined; obtaining it can itself throw when site data is blocked. */
@@ -39,6 +46,11 @@ export function firstLesson(modules: readonly AlgorithmModule[]): string {
   return modules.some((m) => m.id === DEFAULT_LESSON) ? DEFAULT_LESSON : (modules[0]?.id ?? DEFAULT_LESSON)
 }
 
+/** True when `id` is a registered lesson whose modes include Autopilot, so it can fly as the wingman. */
+export function validWingman(id: unknown, modules: readonly AlgorithmModule[]): id is string {
+  return typeof id === 'string' && modules.some((m) => m.id === id && m.modes.includes('autopilot'))
+}
+
 /** A course number is an integer from 1 to MAX_COURSE. */
 export function validCourse(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= MAX_COURSE
@@ -50,7 +62,21 @@ export function defaultSettings(modules: readonly AlgorithmModule[]): Settings {
     modes: {},
     params: Object.fromEntries(modules.map((m) => [m.id, defaultParams(m)])),
     course: DEFAULT_COURSE,
+    conditions: defaultConditions(),
+    wingman: null,
+    best: {},
   }
+}
+
+/** The stored best scores kept for registered lessons only, each a finite number; anything else is dropped. */
+export function mergeBest(stored: unknown, modules: readonly AlgorithmModule[]): Record<string, number> {
+  const best: Record<string, number> = {}
+  if (!isRecord(stored)) return best
+  for (const m of modules) {
+    const value = stored[m.id]
+    if (typeof value === 'number' && Number.isFinite(value)) best[m.id] = value
+  }
+  return best
 }
 
 /** The module's defaults, overridden by each stored key that is a spec key holding a finite number, clamped. */
@@ -94,7 +120,13 @@ export function parseSettings(text: string | null, modules: readonly AlgorithmMo
 
   const course = validCourse(data.course) ? data.course : DEFAULT_COURSE
 
-  return { lesson, modes, params, course }
+  const conditions = mergeConditions(data.conditions)
+
+  const wingman = validWingman(data.wingman, modules) ? data.wingman : null
+
+  const best = mergeBest(data.best, modules)
+
+  return { lesson, modes, params, course, conditions, wingman, best }
 }
 
 /** The stored settings, or defaults when storage is missing, blocked or holds something unusable. */
@@ -121,6 +153,9 @@ export function saveSettings(getStorage: StorageGetter, settings: Settings): boo
         modes: settings.modes,
         params: settings.params,
         course: settings.course,
+        conditions: settings.conditions,
+        wingman: settings.wingman,
+        best: settings.best,
       }),
     )
     return true

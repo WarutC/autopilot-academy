@@ -159,6 +159,86 @@ body {
   opacity: 0.45;
 }
 
+/* The Wingman card: one full-width select and a note under it. */
+.wingman-select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 12px;
+  background: var(--field);
+  color: var(--ink);
+  border: 2px solid var(--strong);
+  border-radius: 8px;
+  font: var(--type-label);
+}
+
+.wingman-select:disabled {
+  opacity: 0.45;
+}
+
+.wingman-note {
+  margin: 12px 0 0;
+  font: var(--type-body);
+  color: var(--muted);
+}
+
+/* The Logbook card: a table of the newest flights, scrolling sideways in a narrow column. */
+.logbook-body {
+  overflow-x: auto;
+}
+
+.logbook-empty {
+  margin: 0;
+  font: var(--type-body);
+  color: var(--muted);
+}
+
+.logbook-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: var(--type-number);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.logbook-table th,
+.logbook-table td {
+  padding: 4px 6px;
+  border-bottom: 2px solid var(--line);
+  text-align: right;
+  vertical-align: top;
+}
+
+.logbook-table th {
+  font: var(--type-label);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.logbook-table th:first-child,
+.logbook-table td:first-child {
+  text-align: left;
+}
+
+.logbook-table td:not(:first-child) {
+  white-space: nowrap;
+}
+
+.logbook-tag {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font: 400 18px/1.2 var(--font-condensed);
+  color: var(--muted);
+}
+
+/* Ghost is the wingman everywhere; its text is nudged toward Ink to keep 4.5:1 on the panel. */
+.logbook-tag-wingman {
+  border-color: var(--ghost);
+  color: color-mix(in srgb, var(--ghost) 90%, var(--ink));
+}
+
 /* The scene and the banner over it. */
 .stage {
   position: relative;
@@ -260,6 +340,11 @@ body {
   margin-bottom: 16px;
 }
 
+/* No reset button follows the conditions rows. */
+.conditions-card .param-list {
+  margin-bottom: 0;
+}
+
 .param-row {
   display: grid;
   gap: 4px;
@@ -305,6 +390,18 @@ body {
 
 .btn-reset {
   width: 100%;
+}
+
+/* The Kalman filter's note and its Q and R rows, under its toggle. */
+.kalman-box {
+  display: grid;
+  gap: 16px;
+}
+
+.kalman-note {
+  margin: 0;
+  font: var(--type-body);
+  color: var(--muted);
 }
 
 .banner-note {
@@ -378,7 +475,8 @@ body {
 .setpoint[hidden],
 .mode-switch[hidden],
 .pole-readout[hidden],
-.pole-readout-plot[hidden] {
+.pole-readout-plot[hidden],
+.kalman-box[hidden] {
   display: none;
 }
 
@@ -503,10 +601,12 @@ body {
 .param-number:focus-visible,
 .param-slider:focus-visible,
 .param-check:focus-visible,
+.wingman-select:focus-visible,
 .lesson-chip:focus-visible,
 .stick-btn:focus-visible,
 .scene:focus-visible,
-.setpoint-input:focus-visible {
+.setpoint-input:focus-visible,
+.logbook-body:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
   box-shadow: 0 0 0 7px var(--focus-halo);
