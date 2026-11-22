@@ -3,6 +3,7 @@
 
 import { makeCourse, refAt } from '../sim/course.ts'
 import { PLANT } from '../sim/plant.ts'
+import { CALM } from '../sim/run.ts'
 import { ringResult } from '../sim/scoring.ts'
 import { createTrace } from '../sim/trace.ts'
 import type { RingResult, Snapshot } from '../sim/types.ts'
@@ -86,5 +87,6 @@ export function fixtureSnapshot(flown: number = FIXTURE_FLOWN): Snapshot {
     rings,
     markers: [],
     trace: { player: trace },
+    conditions: CALM,
   }
 }

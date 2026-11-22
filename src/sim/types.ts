@@ -106,6 +106,21 @@ export interface Marker {
   readonly label: string
 }
 
+/**
+ * The flight conditions a run flies in. `down` is a steady downdraft and
+ * `gusts` the rms of a random vertical gust, both in m/s². `noise` is the
+ * altimeter noise σ in meters; `kalman` (0 or 1) turns the Kalman filter on,
+ * with process noise `kq` and assumed sensor variance `kr` in m².
+ */
+export interface Conditions {
+  readonly down: number
+  readonly gusts: number
+  readonly noise: number
+  readonly kalman: number
+  readonly kq: number
+  readonly kr: number
+}
+
 export interface Snapshot {
   readonly t: number
   readonly course: number
@@ -113,4 +128,6 @@ export interface Snapshot {
   readonly rings: readonly Ring[]
   readonly markers: readonly Marker[]
   readonly trace: Readonly<Partial<Record<PlaneId, Trace>>>
+  /** The run's current flight conditions. */
+  readonly conditions: Readonly<Conditions>
 }

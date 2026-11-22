@@ -260,6 +260,11 @@ body {
   margin-bottom: 16px;
 }
 
+/* No reset button follows the conditions rows. */
+.conditions-card .param-list {
+  margin-bottom: 0;
+}
+
 .param-row {
   display: grid;
   gap: 4px;

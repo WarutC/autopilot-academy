@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { defaultParams } from '../algorithms/index.ts'
 import manual from '../algorithms/manual.ts'
+import pAlgorithm from '../algorithms/p.ts'
 import pid from '../algorithms/pid.ts'
 import { makeCourse } from './course.ts'
+import { gauss, stream } from './rng.ts'
 import { PLANT, SETPOINT_MAX, SETPOINT_MIN } from './plant.ts'
-import { createRun, type Run, type RunAlgorithm } from './run.ts'
+import { CALM, createRun, type Run, type RunAlgorithm, type RunOptions } from './run.ts'
 import { ringsPassed, summarize } from './scoring.ts'
-import type { ControlContext, Snapshot } from './types.ts'
+import type { Conditions, ControlContext, Snapshot } from './types.ts'
 
 const pidRun = () =>
   createRun({ course: 101, mode: 'autopilot', player: { algorithm: pid, params: defaultParams(pid) } })
@@ -514,5 +516,113 @@ describe('Run setSetpoint', () => {
     expect(run.status()).toBe('flying')
     expect(Math.abs(run.snapshot().planes[0].h - 70)).toBeLessThanOrEqual(2)
     expect(summarize(run, 'player')!.tags).toEqual(['semi-auto'])
+  })
+})
+
+describe('Run conditions', () => {
+  const pidOn = (course: number, conditions?: Partial<Conditions>, mode: RunOptions['mode'] = 'autopilot') =>
+    createRun({ course, mode, player: { algorithm: pid, params: defaultParams(pid) }, conditions })
+  const heights = (run: Run) => {
+    const tr = run.snapshot().trace.player!
+    return Array.from(tr.h.subarray(0, tr.length))
+  }
+
+  it('flies calm conditions exactly like a run without conditions', () => {
+    const a = pidRun()
+    const b = pidOn(101, { ...CALM })
+    flyToEnd(a)
+    flyToEnd(b)
+    expect(traceColumns(b.snapshot())).toEqual(traceColumns(a.snapshot()))
+    expect(b.result('player')).toEqual(a.result('player'))
+    expect(b.status()).toBe(a.status())
+  })
+
+  it('shows the calm defaults in the snapshot, with given keys merged and bad ones dropped', () => {
+    expect(pidRun().snapshot().conditions).toEqual(CALM)
+    const conditions = { gusts: 5, down: NaN, nope: 3 } as unknown as Partial<Conditions>
+    expect(pidOn(101, conditions).snapshot().conditions).toEqual({ ...CALM, gusts: 5 })
+  })
+
+  it('draws the same gusts however the steps are batched', () => {
+    const runs = [1, 2, 4].map((n) => {
+      const run = pidOn(101, { gusts: 10 })
+      flyToEnd(run, n)
+      return heights(run)
+    })
+    expect(runs[1]).toEqual(runs[0])
+    expect(runs[2]).toEqual(runs[0])
+    expect(heights(pidRun())).not.toEqual(runs[0])
+  })
+
+  it('draws different gusts on different courses', () => {
+    const a = pidOn(101, { gusts: 10 }, 'semi-auto')
+    const b = pidOn(202, { gusts: 10 }, 'semi-auto')
+    a.step(2000)
+    b.step(2000)
+    expect(heights(b)).not.toEqual(heights(a))
+  })
+
+  it('advances the gusts whatever the slider says, so a late change picks up the same sequence', () => {
+    const a = pidOn(101)
+    const b = pidOn(101, { gusts: 0 })
+    const fromStart = pidOn(101, { gusts: 10 })
+    for (const run of [a, b, fromStart]) run.step(400)
+    expect(heights(fromStart)).not.toEqual(heights(a))
+    a.setEnv('gusts', 10)
+    b.setEnv('gusts', 10)
+    flyToEnd(a, 1)
+    flyToEnd(b, 3)
+    expect(heights(b)).toEqual(heights(a))
+    expect(b.result('player')).toEqual(a.result('player'))
+  })
+
+  it('advances the gust state on every physics step while gusts are 0', () => {
+    const N = 400
+    const run = createRun({ course: 101, mode: 'autopilot', player: { algorithm: fixed(() => 0), params: {} } })
+    run.step(N)
+    expect(run.snapshot().planes[0]!.v).toBe(0)
+    run.setEnv('gusts', 10)
+    run.step(1)
+    // The (N+1)-th draw of the course's gust stream, not the first.
+    const rng = stream(101, 'gusts')
+    let g = 0
+    for (let i = 0; i < N + 1; i++) g += -g * PLANT.dt + Math.sqrt(2 * PLANT.dt) * gauss(rng)
+    expect(run.snapshot().planes[0]!.v).toBeCloseTo(10 * g * PLANT.dt, 12)
+  })
+
+  it('holds P below the target in a steady downdraft, and PID takes the error away', () => {
+    const flyHold = (algorithm: RunAlgorithm, params: Record<string, number>) => {
+      const run = createRun({ course: 101, mode: 'semi-auto', player: { algorithm, params }, conditions: { down: 5 } })
+      run.step(Math.round(20 / PLANT.dt))
+      const plane = run.snapshot().planes[0]!
+      return plane.ref - plane.h
+    }
+    const pError = flyHold(pAlgorithm, defaultParams(pAlgorithm))
+    const pidError = flyHold(pid, defaultParams(pid))
+    // P settles where b·Kp·e balances the downdraft: 5 / (20 · 0.1) = 2.5 m low.
+    expect(pError).toBeGreaterThan(1.5)
+    expect(Math.abs(pidError)).toBeLessThan(pError / 10)
+  })
+
+  it('ignores an unknown key and non-finite values in setEnv', () => {
+    const run = pidOn(101, { gusts: 3 })
+    const before = run.snapshot().conditions
+    run.setEnv('nope', 1)
+    run.setEnv('gusts', NaN)
+    run.setEnv('gusts', Infinity)
+    expect(run.snapshot().conditions).toEqual(before)
+  })
+
+  it('never retunes or marks on setEnv, and replaces the record it handed out', () => {
+    const run = pidRun()
+    run.step(200)
+    const before = run.snapshot()
+    run.setEnv('gusts', 5)
+    const after = run.snapshot()
+    expect(after.conditions.gusts).toBe(5)
+    expect(before.conditions.gusts).toBe(0)
+    expect(after.planes[0]!.retuned).toBe(false)
+    expect(after.markers).toEqual([])
+    expect(run.result('player')!.retuned).toBe(false)
   })
 })

@@ -11,8 +11,10 @@ import {
   type PlaneResult,
   type ScoredRun,
 } from './scoring.ts'
+import { gauss, stream } from './rng.ts'
 import { createTrace, type TraceBuffer } from './trace.ts'
 import type {
+  Conditions,
   ControlContext,
   Controller,
   FlightMode,
@@ -28,6 +30,21 @@ import type {
 
 /** Physics steps per control tick. */
 const CONTROL_EVERY = Math.round(PLANT.Tc / PLANT.dt)
+
+/** Calm air and a perfect altimeter: the conditions a run flies when none are given. */
+export const CALM: Readonly<Conditions> = Object.freeze({ down: 0, gusts: 0, noise: 0, kalman: 0, kq: 10, kr: 4 })
+
+/** `base` with each finite value of a known key in `over` applied. */
+function withConditions(base: Readonly<Conditions>, over: Partial<Record<string, unknown>> | undefined): Readonly<Conditions> {
+  const next: Record<string, number> = { ...base }
+  if (over) {
+    for (const key of Object.keys(CALM)) {
+      const value = over[key]
+      if (typeof value === 'number' && Number.isFinite(value)) next[key] = value
+    }
+  }
+  return Object.freeze(next as unknown as Conditions)
+}
 
 /** What a run needs from an algorithm; an algorithm module satisfies it. */
 export interface RunAlgorithm {
@@ -45,6 +62,8 @@ export interface RunOptions {
   readonly course: number
   readonly mode: FlightMode
   readonly player: RunPlayer
+  /** Flight conditions; any key left out is calm. */
+  readonly conditions?: Partial<Conditions>
 }
 
 export interface Run extends ScoredRun {
@@ -76,6 +95,13 @@ export interface Run extends ScoredRun {
    * value is ignored; others are clamped to [SETPOINT_MIN, SETPOINT_MAX].
    */
   setSetpoint(h: number): void
+  /**
+   * Sets the flight condition `key` (such as `gusts`) to `value`; the physics
+   * uses it from the next physics step and the snapshot shows it at once. It
+   * never counts as a retune and drops no marker. An unknown key or a
+   * non-finite value is ignored.
+   */
+  setEnv(key: string, value: number): void
 }
 
 /** One plane: its plant, controller, estimator state, scoring and trace. */
@@ -139,6 +165,13 @@ export function createRun(options: RunOptions): Run {
   }
   const planes: readonly Plane[] = [player]
   const markers: Marker[] = []
+  /** Replaced, never mutated, on each change, so a snapshot's record stays as it was. */
+  let conditions: Readonly<Conditions> = withConditions(CALM, options.conditions)
+  // One gust process per run, advanced once per physics step whatever the
+  // conditions say, so its sequence depends only on the course.
+  const gustRng = stream(course.number, 'gusts')
+  /** The unit-variance gust state. */
+  let gust = 0
 
   /** Physics steps taken so far; the clock is `k·dt`. */
   let k = 0
@@ -182,10 +215,10 @@ export function createRun(options: RunOptions): Run {
     }
   }
 
-  function stepPlane(p: Plane, tick: boolean, t: number): void {
+  function stepPlane(p: Plane, tick: boolean, t: number, disturbance: number): void {
     if (p.status !== 'flying') return
     if (tick) controlTick(p, t)
-    p.plant = stepPlant(p.plant, p.u, 0)
+    p.plant = stepPlant(p.plant, p.u, disturbance)
     const { h, x } = p.plant
     p.iae = integrateError(p.iae, refOf(p, x), h, dt)
     p.energy = integrateEnergy(p.energy, p.u, dt)
@@ -213,7 +246,9 @@ export function createRun(options: RunOptions): Run {
   function physicsStep(): void {
     const tick = k % CONTROL_EVERY === 0
     const t = k * dt
-    for (const p of planes) stepPlane(p, tick, t)
+    gust += -gust * dt + Math.sqrt(2 * dt) * gauss(gustRng)
+    const disturbance = -conditions.down + conditions.gusts * gust
+    for (const p of planes) stepPlane(p, tick, t, disturbance)
     k++
   }
 
@@ -258,6 +293,7 @@ export function createRun(options: RunOptions): Run {
         rings: course.rings,
         markers: markers.slice(),
         trace: { player: traceView(player.trace) },
+        conditions,
       }
     },
     status(plane: PlaneId = 'player') {
@@ -284,6 +320,11 @@ export function createRun(options: RunOptions): Run {
     setSetpoint(h) {
       if (typeof h !== 'number' || !Number.isFinite(h)) return
       player.setpoint = clamp(h, SETPOINT_MIN, SETPOINT_MAX)
+    },
+    setEnv(key, value) {
+      if (typeof key !== 'string' || !Object.hasOwn(CALM, key)) return
+      if (typeof value !== 'number' || !Number.isFinite(value)) return
+      conditions = withConditions(conditions, { [key]: value })
     },
     result(plane: PlaneId): PlaneResult | undefined {
       const p = find(plane)

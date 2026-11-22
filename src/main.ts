@@ -6,10 +6,11 @@ import { draw as drawScene } from './render/scene.ts'
 import { draw as drawSplane } from './render/splane.ts'
 import { PLANT, SETPOINT_MAX, SETPOINT_MIN } from './sim/plant.ts'
 import type { Run, RunPlayer } from './sim/run.ts'
-import type { FlightMode, Snapshot } from './sim/types.ts'
+import type { Conditions, FlightMode, Snapshot } from './sim/types.ts'
 import { watchAutoPause } from './ui/auto-pause.ts'
 import { createAutopilotCard } from './ui/autopilot-card.ts'
 import { bannerContent, createBanner } from './ui/banner.ts'
+import { createConditionsCard } from './ui/conditions-card.ts'
 import { createDrawer, PHONE_LANDSCAPE } from './ui/drawer.ts'
 import { createFlight, inFlight, pauseForInterruption, playerRuns, type Phase } from './ui/flight.ts'
 import { createStick, gameKey, typingTarget } from './ui/input.ts'
@@ -97,7 +98,14 @@ const stick = createStick((value) => {
 })
 
 const flight = createFlight(
-  playerRuns(() => ({ course: store.course, mode: runMode(), player, setpoint, stick: stick.value })),
+  playerRuns(() => ({
+    course: store.course,
+    mode: runMode(),
+    player,
+    setpoint,
+    stick: stick.value,
+    conditions: store.conditions,
+  })),
   store,
 )
 
@@ -157,6 +165,17 @@ side.append(autopilotCard.element)
 const poleReadout = createPoleReadout(document)
 const poleCtx = poleReadout.canvas.getContext('2d')!
 side.append(poleReadout.element)
+
+/** The downdraft and gusts; a change reaches the current run at once and every later Fly. */
+const conditionsCard = createConditionsCard(document, store.conditions, {
+  change(key, value) {
+    store.setCondition(key, value)
+    // An ended run keeps the conditions it flew; the ready preview takes them so its snapshot stays current.
+    if (flight.phase !== 'ended') flight.run.setEnv(key, store.conditions[key as keyof Conditions])
+    requestDraw()
+  },
+})
+side.append(conditionsCard.element)
 
 /** Switches to another lesson outside a flight, from a chip or the address. */
 function selectLesson(id: string): void {

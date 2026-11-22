@@ -3,7 +3,7 @@ import { defaultParams } from '../algorithms/index.ts'
 import pid from '../algorithms/pid.ts'
 import { makeCourse, refAt } from '../sim/course.ts'
 import { PLANT } from '../sim/plant.ts'
-import { createRun } from '../sim/run.ts'
+import { CALM, createRun } from '../sim/run.ts'
 import type { TraceBuffer } from '../sim/trace.ts'
 import type { PlaneSnapshot, RingResult, Snapshot, Trace } from '../sim/types.ts'
 import { fixtureSnapshot } from './fixture.ts'
@@ -46,6 +46,7 @@ function snapshotWith(p: PlaneSnapshot | null, trace?: Trace): Snapshot {
     rings: course.rings,
     markers: [],
     trace: trace ? { player: trace } : {},
+    conditions: CALM,
   }
 }
 

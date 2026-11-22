@@ -3,7 +3,8 @@
 // throws: blocked, full or corrupt storage just means defaults.
 
 import { defaultParams, type AlgorithmModule } from '../algorithms/index.ts'
-import type { FlightMode } from '../sim/types.ts'
+import type { Conditions, FlightMode } from '../sim/types.ts'
+import { defaultConditions, mergeConditions } from './conditions.ts'
 import { clampValue } from './params.ts'
 
 export const STORAGE_KEY = 'autopilot-academy.v1'
@@ -22,6 +23,8 @@ export interface Settings {
   /** Every registered lesson's params, complete. */
   readonly params: Readonly<Record<string, Readonly<Record<string, number>>>>
   readonly course: number
+  /** The flight conditions, complete. */
+  readonly conditions: Conditions
 }
 
 /** Returns the storage, or undefined; obtaining it can itself throw when site data is blocked. */
@@ -50,6 +53,7 @@ export function defaultSettings(modules: readonly AlgorithmModule[]): Settings {
     modes: {},
     params: Object.fromEntries(modules.map((m) => [m.id, defaultParams(m)])),
     course: DEFAULT_COURSE,
+    conditions: defaultConditions(),
   }
 }
 
@@ -94,7 +98,9 @@ export function parseSettings(text: string | null, modules: readonly AlgorithmMo
 
   const course = validCourse(data.course) ? data.course : DEFAULT_COURSE
 
-  return { lesson, modes, params, course }
+  const conditions = mergeConditions(data.conditions)
+
+  return { lesson, modes, params, course, conditions }
 }
 
 /** The stored settings, or defaults when storage is missing, blocked or holds something unusable. */
@@ -121,6 +127,7 @@ export function saveSettings(getStorage: StorageGetter, settings: Settings): boo
         modes: settings.modes,
         params: settings.params,
         course: settings.course,
+        conditions: settings.conditions,
       }),
     )
     return true

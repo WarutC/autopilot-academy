@@ -3,7 +3,8 @@
 // through to storage. The phase lives here too but is never saved.
 
 import type { AlgorithmModule, Params } from '../algorithms/index.ts'
-import type { FlightMode } from '../sim/types.ts'
+import type { Conditions, FlightMode } from '../sim/types.ts'
+import { clampCondition } from './conditions.ts'
 import { clampValue } from './params.ts'
 import { loadSettings, saveSettings, validCourse, type Settings, type StorageGetter } from './persistence.ts'
 
@@ -40,6 +41,10 @@ export interface Store extends PhaseOwner {
   setParam(id: string, key: string, value: number): void
   readonly course: number
   setCourse(course: number): void
+  /** The flight conditions; a record handed out is never changed later. */
+  readonly conditions: Conditions
+  /** Sets condition `key`, clamped and snapped; an unknown key or a non-finite value is ignored. */
+  setCondition(key: string, value: number): void
 }
 
 /** A lesson's mode until the player picks another: Autopilot when it has one, else its first mode. */
@@ -114,6 +119,14 @@ export function createStore(
       if (!validCourse(course) || course === settings.course) return
       update({ course })
       routeChanged()
+    },
+    get conditions() {
+      return settings.conditions
+    },
+    setCondition(key, value) {
+      const clamped = clampCondition(key, value)
+      if (clamped === undefined || settings.conditions[key as keyof Conditions] === clamped) return
+      update({ conditions: { ...settings.conditions, [key]: clamped } })
     },
   }
 }

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { defaultParams } from '../algorithms/index.ts'
 import manual from '../algorithms/manual.ts'
 import pid from '../algorithms/pid.ts'
+import { defaultConditions } from './conditions.ts'
 import { STORAGE_KEY, type StorageGetter } from './persistence.ts'
 import { createPhase, createStore } from './store.ts'
 
@@ -134,5 +135,55 @@ describe('createPhase', () => {
     expect(owner.phase).toBe('ready')
     owner.setPhase('paused')
     expect(owner.phase).toBe('paused')
+  })
+})
+
+describe('Store conditions', () => {
+  it('starts calm', () => {
+    expect(createStore(modules, fakeStorage().get).conditions).toEqual(defaultConditions())
+  })
+
+  it('clamps and snaps a condition and ignores an unknown key or a non-finite value', () => {
+    const store = createStore(modules, fakeStorage().get)
+    store.setCondition('gusts', 99)
+    store.setCondition('down', 0.3)
+    store.setCondition('nope', 1)
+    store.setCondition('down', NaN)
+    store.setCondition('gusts', Infinity)
+    expect(store.conditions).toEqual({ ...defaultConditions(), gusts: 20, down: 0.5 })
+    expect(store.conditions).not.toHaveProperty('nope')
+  })
+
+  it('remembers a condition across stores and leaves other settings alone', () => {
+    const fake = fakeStorage()
+    const store = createStore(modules, fake.get)
+    store.setParam('pid', 'Kp', 0.5)
+    store.setCourse(202)
+    store.setCondition('gusts', 4)
+    const again = createStore(modules, fake.get)
+    expect(again.conditions.gusts).toBe(4)
+    expect(again.params('pid')).toEqual({ ...pidDefaults, Kp: 0.5 })
+    expect(again.course).toBe(202)
+    expect(JSON.parse(fake.items.get(STORAGE_KEY)!).version).toBe(1)
+  })
+
+  it('never mutates a conditions record it handed out, and skips an unchanged value', () => {
+    const fake = fakeStorage()
+    const store = createStore(modules, fake.get)
+    const before = store.conditions
+    store.setCondition('gusts', 0)
+    expect(store.conditions).toBe(before)
+    expect(fake.items.has(STORAGE_KEY)).toBe(false)
+    store.setCondition('gusts', 5)
+    expect(before.gusts).toBe(0)
+    expect(store.conditions).not.toBe(before)
+  })
+
+  it('keeps working in memory when storage is blocked', () => {
+    const store = createStore(modules, (): never => {
+      throw new Error('blocked')
+    })
+    store.setCondition('down', 3)
+    expect(store.conditions.down).toBe(3)
   })
 })
