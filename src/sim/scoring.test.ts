@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { createRun, type RunAlgorithm } from './run.ts'
 import {
   integrateEnergy,
+  isBestEligible,
   integrateError,
   ringPoints,
   ringResult,
@@ -67,7 +69,9 @@ describe('summarize', () => {
     energy: 0.75,
     retuned: false,
   }
-  const runOf = (r: PlaneResult) => ({ result: (plane: string) => (plane === 'player' ? r : undefined) })
+  const runOf = (r: PlaneResult, wingman?: PlaneResult) => ({
+    result: (plane: string) => (plane === 'player' ? r : plane === 'wingman' ? wingman : undefined),
+  })
 
   it('builds the logbook row', () => {
     expect(summarize(runOf(base), 'player')).toEqual({
@@ -101,5 +105,73 @@ describe('summarize', () => {
 
   it('returns undefined for a missing plane', () => {
     expect(summarize(runOf(base), 'wingman')).toBeUndefined()
+  })
+
+  it('tags a wingman row first, before crashed and retuned', () => {
+    expect(summarize(runOf(base, base), 'wingman')?.tags).toEqual(['wingman'])
+    expect(summarize(runOf(base, { ...base, status: 'crashed', retuned: true }), 'wingman')?.tags).toEqual([
+      'wingman',
+      'crashed',
+      'retuned',
+    ])
+    expect(summarize(runOf(base, base), 'player')?.tags).toEqual([])
+  })
+})
+
+describe('isBestEligible', () => {
+  const base: PlaneResult = {
+    lesson: 'pid',
+    mode: 'autopilot',
+    course: 101,
+    status: 'finished',
+    points: 60,
+    results: [],
+    ringsTotal: 10,
+    iae: 120,
+    energy: 3,
+    retuned: false,
+  }
+
+  it('accepts a finished, un-retuned Autopilot or Manual player flight', () => {
+    expect(isBestEligible(base, 'player')).toBe(true)
+    expect(isBestEligible({ ...base, mode: 'manual' }, 'player')).toBe(true)
+  })
+
+  it('refuses crashed, unfinished, retuned, Semi-auto, wingman and missing results', () => {
+    expect(isBestEligible({ ...base, status: 'crashed' }, 'player')).toBe(false)
+    expect(isBestEligible({ ...base, status: 'flying' }, 'player')).toBe(false)
+    expect(isBestEligible({ ...base, retuned: true }, 'player')).toBe(false)
+    expect(isBestEligible({ ...base, mode: 'semi-auto' }, 'player')).toBe(false)
+    expect(isBestEligible(base, 'wingman')).toBe(false)
+    expect(isBestEligible(undefined, 'player')).toBe(false)
+  })
+})
+
+describe('Semi-auto IAE', () => {
+  const hold: RunAlgorithm = { id: 'hold', create: () => ({ compute: () => 0 }) }
+
+  function flown(mode: 'semi-auto' | 'autopilot') {
+    const run = createRun({ course: 101, mode, player: { algorithm: hold, params: {} } })
+    run.setSetpoint(60)
+    for (let guard = 0; !run.done && guard < 1e6; guard++) run.step()
+    return run
+  }
+
+  it('integrates the error against the setpoint, not the course', () => {
+    const run = flown('semi-auto')
+    const result = run.result('player')!
+    expect(result.status).toBe('finished')
+    // The plane holds 50 m with u = 0 while the setpoint is 60 m.
+    expect(result.iae).toBeCloseTo(10 * run.snapshot().t, 6)
+    const row = summarize(run, 'player')!
+    expect(row.iae).toBe(result.iae)
+    expect(row.tags).toEqual(['semi-auto'])
+    expect(isBestEligible(result, 'player')).toBe(false)
+  })
+
+  it('differs from the same controller flown in Autopilot', () => {
+    const semi = flown('semi-auto').result('player')!
+    const auto = flown('autopilot').result('player')!
+    expect(auto.iae).not.toBeCloseTo(semi.iae, 0)
   })
 })
