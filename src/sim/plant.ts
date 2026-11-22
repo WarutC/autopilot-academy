@@ -4,7 +4,7 @@ import { clamp } from './clamp.ts'
 
 export const PLANT = {
   /** Climb-rate damping, 1/s. */
-  a: 1.0,
+  a: 0.5,
   /** Elevator gain, m/s² per unit command. */
   b: 20,
   /** Forward speed, m/s. */

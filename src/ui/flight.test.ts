@@ -4,7 +4,7 @@ import pid from '../algorithms/pid.ts'
 import { PLANT } from '../sim/plant.ts'
 import { createRun } from '../sim/run.ts'
 import { summarize } from '../sim/scoring.ts'
-import { createFlight, flyLabel, pauseEnabled, pauseLabel, type Flight, type Phase, type Speed } from './flight.ts'
+import { createFlight, flyLabel, inFlight, pauseEnabled, pauseLabel, type Flight, type Phase, type Speed } from './flight.ts'
 
 const pidRun = () =>
   createRun({ course: 101, mode: 'autopilot', player: { algorithm: pid, params: defaultParams(pid) } })
@@ -179,5 +179,11 @@ describe('labels', () => {
     expect(flyLabel(phase)).toBe(fly)
     expect(pauseLabel(phase)).toBe(pause)
     expect(pauseEnabled(phase)).toBe(enabled)
+  })
+})
+
+describe('inFlight', () => {
+  it('holds only while a run is running or paused', () => {
+    expect((['ready', 'running', 'paused', 'ended'] as Phase[]).map(inFlight)).toEqual([false, true, true, false])
   })
 })

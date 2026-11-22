@@ -32,6 +32,8 @@ export interface PlaneResult {
   readonly ringsTotal: number
   readonly iae: number
   readonly energy: number
+  /** A parameter changed during the flight. */
+  readonly retuned: boolean
 }
 
 /** Anything that can report per-plane results, such as a `Run`. */
@@ -76,6 +78,7 @@ export function summarize(run: ScoredRun, plane: PlaneId = 'player'): LogEntry |
   if (!r) return undefined
   const tags: string[] = []
   if (r.status === 'crashed') tags.push('crashed')
+  if (r.retuned) tags.push('retuned')
   return {
     lesson: r.lesson,
     mode: r.mode,

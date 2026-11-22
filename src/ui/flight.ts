@@ -96,3 +96,8 @@ export function pauseLabel(phase: Phase): string {
 export function pauseEnabled(phase: Phase): boolean {
   return phase === 'running' || phase === 'paused'
 }
+
+/** True while a run is flying or paused, so a parameter change retunes it; outside a run it only affects the next Fly. */
+export function inFlight(phase: Phase): boolean {
+  return phase === 'running' || phase === 'paused'
+}

@@ -8,6 +8,8 @@ import type { Phase } from './flight.ts'
 export interface BannerContent {
   readonly title: string
   readonly body: string
+  /** A second line under the body, such as "Retuned". */
+  readonly note?: string
 }
 
 /** What the banner says for a phase and the player's result; undefined hides it. */
@@ -15,14 +17,16 @@ export function bannerContent(phase: Phase, result: PlaneResult | undefined): Ba
   if (phase === 'ready') return { title: 'Ready for takeoff', body: 'Pick an autopilot, then press Fly.' }
   if (phase === 'paused') return { title: 'Paused', body: 'Retune freely. Changes apply the moment you resume.' }
   if (phase !== 'ended' || !result) return undefined
+  const note = result.retuned ? { note: 'Retuned' } : {}
   if (result.status === 'crashed') {
-    return { title: 'Crashed', body: 'The aircraft left the safe altitude band. Retune and fly again.' }
+    return { title: 'Crashed', body: 'The aircraft left the safe altitude band. Retune and fly again.', ...note }
   }
   if (result.status === 'finished') {
     const passed = ringsPassed(result.results)
     return {
       title: 'Mission complete',
       body: `${result.points.toFixed(1)} points, ${passed} of ${result.ringsTotal} rings.`,
+      ...note,
     }
   }
   return undefined
@@ -46,7 +50,7 @@ export function createBanner(doc: Document): Banner {
   return {
     element,
     update(content) {
-      if (content?.title === shown?.title && content?.body === shown?.body) return
+      if (content?.title === shown?.title && content?.body === shown?.body && content?.note === shown?.note) return
       shown = content
       if (!content) {
         element.replaceChildren()
@@ -61,6 +65,12 @@ export function createBanner(doc: Document): Banner {
       body.className = 'banner-body'
       body.textContent = content.body
       box.append(title, body)
+      if (content.note) {
+        const note = doc.createElement('p')
+        note.className = 'banner-note'
+        note.textContent = content.note
+        box.append(note)
+      }
       element.replaceChildren(box)
     },
   }

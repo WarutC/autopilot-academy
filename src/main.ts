@@ -1,11 +1,13 @@
 import './styles/tokens.css'
 import './styles/layout.css'
 import { defaultParams, findAlgorithm } from './algorithms/index.ts'
+import { draw as drawRecorder } from './render/recorder.ts'
 import { draw as drawScene } from './render/scene.ts'
 import { createRun, type Run, type RunPlayer } from './sim/run.ts'
 import type { Snapshot } from './sim/types.ts'
+import { createAutopilotCard } from './ui/autopilot-card.ts'
 import { bannerContent, createBanner } from './ui/banner.ts'
-import { createFlight, type Phase } from './ui/flight.ts'
+import { createFlight, inFlight, type Phase } from './ui/flight.ts'
 import { createScoreMirror } from './ui/score-mirror.ts'
 import { loadTheme, watchTheme } from './ui/theme.ts'
 import { createToolbar } from './ui/toolbar.ts'
@@ -19,13 +21,55 @@ const stage = document.createElement('div')
 stage.className = 'stage'
 stage.append(canvas, banner.element)
 const app = document.querySelector('#app')!
-app.append(stage)
 const ctx = canvas.getContext('2d')!
+
+// Wide screens: the flight on the left, the cards in a 380 px column on the right.
+const layout = document.createElement('div')
+layout.className = 'layout'
+const main = document.createElement('div')
+main.className = 'layout-main'
+const side = document.createElement('div')
+side.className = 'layout-side'
+layout.append(main, side)
+app.append(layout)
+main.append(stage)
+
+const recorderCanvas = document.createElement('canvas')
+recorderCanvas.className = 'recorder'
+recorderCanvas.setAttribute('role', 'img')
+recorderCanvas.setAttribute('aria-label', 'Flight recorder: target and altitude over time, with a marker at each parameter change')
+const recorderCtx = recorderCanvas.getContext('2d')!
+const recorderCard = document.createElement('section')
+recorderCard.className = 'card recorder-card'
+recorderCard.setAttribute('aria-labelledby', 'recorder-card-title')
+const recorderTitle = document.createElement('h2')
+recorderTitle.className = 'card-header'
+recorderTitle.id = 'recorder-card-title'
+recorderTitle.textContent = 'Flight recorder'
+const recorderBody = document.createElement('div')
+recorderBody.className = 'card-body'
+recorderBody.append(recorderCanvas)
+recorderCard.append(recorderTitle, recorderBody)
 
 const pid = findAlgorithm('pid')!
 /** The player's autopilot; each Fly starts a run with the current one. */
 let player: RunPlayer = { algorithm: pid, params: defaultParams(pid) }
 const flight = createFlight(() => createRun({ course: 101, mode: 'autopilot', player }))
+
+const autopilotCard = createAutopilotCard(document, pid, player.params, {
+  change(key, value) {
+    // A new record each time, so a finished run's params are never touched.
+    player = { ...player, params: { ...player.params, [key]: value } }
+    if (inFlight(flight.phase)) flight.run.setParam('player', key, value)
+  },
+  commit(label) {
+    if (inFlight(flight.phase)) {
+      flight.run.markChange(label)
+      requestDraw()
+    }
+  },
+})
+side.append(autopilotCard.element)
 
 const toolbar = createToolbar(document, {
   fly() {
@@ -44,10 +88,10 @@ const toolbar = createToolbar(document, {
     syncUi()
   },
 })
-app.append(toolbar.element)
+main.append(toolbar.element, recorderCard)
 
 const mirror = createScoreMirror(document)
-app.append(mirror.element)
+main.append(mirror.element)
 
 let theme = loadTheme()
 /** A dev-only fixture shown instead of the run while the flight is ready. */
@@ -72,17 +116,23 @@ function syncUi(): void {
   }
 }
 
-function draw(): void {
-  const snapshot = fixture && flight.phase === 'ready' ? fixture : flight.snapshot()
+/** Sizes `el`'s backing store to its CSS size at the device pixel ratio; returns the size. */
+function fitCanvas(el: HTMLCanvasElement): { width: number; height: number; dpr: number } {
   const dpr = window.devicePixelRatio || 1
-  const width = canvas.clientWidth
-  const height = canvas.clientHeight
+  const width = el.clientWidth
+  const height = el.clientHeight
   const pxWidth = Math.round(width * dpr)
   const pxHeight = Math.round(height * dpr)
   // Assigning the size reallocates the backing store, so only do it on a change.
-  if (canvas.width !== pxWidth) canvas.width = pxWidth
-  if (canvas.height !== pxHeight) canvas.height = pxHeight
-  drawScene(ctx, snapshot, theme, { width, height, dpr })
+  if (el.width !== pxWidth) el.width = pxWidth
+  if (el.height !== pxHeight) el.height = pxHeight
+  return { width, height, dpr }
+}
+
+function draw(): void {
+  const snapshot = fixture && flight.phase === 'ready' ? fixture : flight.snapshot()
+  drawScene(ctx, snapshot, theme, fitCanvas(canvas))
+  drawRecorder(recorderCtx, snapshot, theme, fitCanvas(recorderCanvas))
   mirror.update(snapshot)
 }
 
@@ -143,7 +193,9 @@ function start(): void {
     theme = loadTheme()
     requestDraw()
   })
-  new ResizeObserver(requestDraw).observe(canvas)
+  const resize = new ResizeObserver(requestDraw)
+  resize.observe(canvas)
+  resize.observe(recorderCanvas)
   watchPixelRatio()
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && flight.phase === 'running') {

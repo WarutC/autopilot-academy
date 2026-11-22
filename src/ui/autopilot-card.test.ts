@@ -1,0 +1,213 @@
+import { describe, expect, it, vi } from 'vitest'
+import { defaultParams } from '../algorithms/index.ts'
+import pid from '../algorithms/pid.ts'
+import { createAutopilotCard, type AutopilotCardHandlers } from './autopilot-card.ts'
+
+/** Just enough of an element for the card: inputs, labels, text and events. */
+class FakeElement {
+  className = ''
+  id = ''
+  type = ''
+  htmlFor = ''
+  inputMode = ''
+  autocomplete = ''
+  min = ''
+  max = ''
+  step = ''
+  checked = false
+  readonly attrs = new Map<string, string>()
+  readonly children: Array<FakeElement | string> = []
+  readonly listeners = new Map<string, Array<() => void>>()
+  private text = ''
+  private val = ''
+  readonly tagName: string
+  private readonly doc: FakeDoc
+  constructor(tagName: string, doc: FakeDoc) {
+    this.tagName = tagName
+    this.doc = doc
+  }
+  get value(): string {
+    return this.val
+  }
+  set value(v: string) {
+    this.doc.writes++
+    this.val = v
+  }
+  get textContent(): string {
+    return this.text + this.children.map((c) => (typeof c === 'string' ? c : c.textContent)).join('')
+  }
+  set textContent(value: string) {
+    this.doc.writes++
+    this.text = value
+  }
+  setAttribute(name: string, value: string): void {
+    this.doc.writes++
+    this.attrs.set(name, value)
+  }
+  getAttribute(name: string): string | null {
+    return this.attrs.get(name) ?? null
+  }
+  addEventListener(type: string, listener: () => void): void {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener])
+  }
+  append(...nodes: Array<FakeElement | string>): void {
+    this.children.push(...nodes)
+  }
+  fire(type: string): void {
+    for (const l of this.listeners.get(type) ?? []) l()
+  }
+  /** Every descendant element, depth first. */
+  all(): FakeElement[] {
+    return this.children.flatMap((c) => (typeof c === 'string' ? [] : [c, ...c.all()]))
+  }
+}
+
+class FakeDoc {
+  writes = 0
+  createElement(tag: string): FakeElement {
+    return new FakeElement(tag, this)
+  }
+}
+
+function setup(params = defaultParams(pid)) {
+  const doc = new FakeDoc()
+  const calls: string[] = []
+  const handlers: AutopilotCardHandlers = {
+    change: vi.fn((key: string, value: number) => void calls.push(`change ${key} ${value}`)),
+    commit: vi.fn((label: string) => void calls.push(`commit ${label}`)),
+  }
+  const card = createAutopilotCard(doc as unknown as Document, pid, params, handlers)
+  const root = card.element as unknown as FakeElement
+  const els = root.all()
+  const byClass = (c: string) => els.filter((e) => e.className.split(' ').includes(c))
+  const row = (key: string) => {
+    const index = pid.params.findIndex((p) => p.key === key)
+    const r = byClass('param-row')[index]!
+    const inner = r.all()
+    const find = (c: string) => inner.find((e) => e.className === c)
+    return { field: find('param-number'), slider: find('param-slider'), check: find('param-check'), label: find('param-label')! }
+  }
+  return { doc, calls, handlers, card, root, els, byClass, row }
+}
+
+describe('createAutopilotCard', () => {
+  it('builds the heading, name, lesson with a bold Try:, five PID rows and Reset', () => {
+    const { root, els, byClass, row } = setup()
+    expect(byClass('card-header')[0]!.textContent).toBe('Autopilot')
+    expect(byClass('autopilot-name')[0]!.textContent).toBe('PID')
+    const lesson = byClass('lesson')[0]!
+    expect(lesson.textContent).toBe(pid.lesson)
+    expect(lesson.children.find((c) => typeof c !== 'string')).toMatchObject({ tagName: 'strong' })
+    expect(byClass('param-row')).toHaveLength(5)
+    for (const spec of pid.params) {
+      const r = row(spec.key)
+      const input = spec.toggle ? r.check! : r.field!
+      expect(r.label.htmlFor).toBe(input.id)
+      expect(r.label.textContent).toBe(spec.label)
+      const sub = r.label.children.find((c) => typeof c !== 'string' && c.tagName === 'sub')
+      if (/^K[a-z]$/.test(spec.key)) expect(sub).toMatchObject({ textContent: spec.key.slice(1) })
+      else expect(sub).toBeUndefined()
+      expect(input.getAttribute('aria-label')).toBe(spec.accessibleName)
+      if (!spec.toggle) expect(r.slider!.getAttribute('aria-label')).toBe(spec.accessibleName)
+    }
+    expect(row('Kd').field!.value).toBe('0.05')
+    expect(row('Kd').slider!.value).toBe('0.05')
+    expect(row('Kd').slider!.min).toBe('0')
+    expect(row('Kd').slider!.max).toBe('0.3')
+    expect(row('aw').check!.checked).toBe(true)
+    expect(els.find((e) => e.className.includes('btn-reset'))!.textContent).toBe('Reset this autopilot to defaults')
+    expect(root.className).toContain('card')
+  })
+
+  it('keeps the field in step with the slider and commits once per release', () => {
+    const { calls, row } = setup({ ...defaultParams(pid), Kd: 0 })
+    const { slider, field } = row('Kd')
+    for (const v of ['0.01', '0.03', '0.05']) {
+      slider!.value = v
+      slider!.fire('input')
+      expect(field!.value).toBe(v)
+    }
+    slider!.fire('change')
+    expect(calls).toEqual(['change Kd 0.01', 'change Kd 0.03', 'change Kd 0.05', 'commit Kd 0 → 0.05'])
+  })
+
+  it('commits nothing when a drag ends where it started', () => {
+    const { handlers, row } = setup()
+    const { slider } = row('Kd')
+    slider!.value = '0.1'
+    slider!.fire('input')
+    slider!.value = '0.05'
+    slider!.fire('input')
+    slider!.fire('change')
+    expect(handlers.commit).not.toHaveBeenCalled()
+  })
+
+  it('starts the next drag label from a typed value after a drag that sent no change', () => {
+    const { handlers, row } = setup()
+    const { slider, field } = row('Kd')
+    // A drag that ends at its start value: the browser sends no change event.
+    slider!.value = '0.1'
+    slider!.fire('input')
+    slider!.value = '0.05'
+    slider!.fire('input')
+    field!.value = '0.2'
+    field!.fire('change')
+    slider!.value = '0.25'
+    slider!.fire('input')
+    slider!.fire('change')
+    expect(vi.mocked(handlers.commit).mock.calls).toEqual([['Kd 0.05 → 0.2'], ['Kd 0.2 → 0.25']])
+  })
+
+  it('commits a typed number, clamps it and reverts bad input', () => {
+    const { calls, row } = setup({ ...defaultParams(pid), Kd: 0.1 })
+    const { field, slider } = row('Kd')
+    field!.value = 'abc'
+    field!.fire('change')
+    expect(field!.value).toBe('0.1')
+    field!.value = '9'
+    field!.fire('change')
+    expect(field!.value).toBe('0.3')
+    expect(slider!.value).toBe('0.3')
+    field!.value = '-1'
+    field!.fire('change')
+    expect(field!.value).toBe('0')
+    field!.value = '0'
+    field!.fire('change')
+    expect(calls).toEqual(['change Kd 0.3', 'commit Kd 0.1 → 0.3', 'change Kd 0', 'commit Kd 0.3 → 0'])
+  })
+
+  it('changes and commits a toggle', () => {
+    const { calls, row } = setup()
+    const { check } = row('aw')
+    check!.checked = false
+    check!.fire('change')
+    expect(calls).toEqual(['change aw 0', 'commit aw on → off'])
+  })
+
+  it('resets every changed key, then commits once with the labels joined', () => {
+    const { calls, row, els } = setup({ ...defaultParams(pid), Kp: 0.5, Kd: 0 })
+    els.find((e) => e.className.includes('btn-reset'))!.fire('click')
+    expect(calls).toEqual(['change Kp 0.2', 'change Kd 0.05', 'commit Kp 0.5 → 0.2, Kd 0 → 0.05'])
+    expect(row('Kp').field!.value).toBe('0.2')
+    expect(row('Kd').slider!.value).toBe('0.05')
+  })
+
+  it('fires nothing on Reset when nothing changed', () => {
+    const { handlers, els } = setup()
+    els.find((e) => e.className.includes('btn-reset'))!.fire('click')
+    expect(handlers.change).not.toHaveBeenCalled()
+    expect(handlers.commit).not.toHaveBeenCalled()
+  })
+
+  it('syncs fields on update without rewriting unchanged ones or calling handlers', () => {
+    const { doc, card, handlers, row } = setup()
+    const writes = doc.writes
+    card.update(defaultParams(pid))
+    expect(doc.writes).toBe(writes)
+    card.update({ ...defaultParams(pid), Kd: 0.1, aw: 0 })
+    expect(row('Kd').field!.value).toBe('0.1')
+    expect(row('Kd').slider!.value).toBe('0.1')
+    expect(row('aw').check!.checked).toBe(false)
+    expect(handlers.change).not.toHaveBeenCalled()
+  })
+})

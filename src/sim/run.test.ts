@@ -243,3 +243,121 @@ describe('Run bad controller output', () => {
     expect(run.done).toBe(true)
   })
 })
+
+const pidWith = (overrides: Record<string, number>) =>
+  createRun({ course: 101, mode: 'autopilot', player: { algorithm: pid, params: { ...defaultParams(pid), ...overrides } } })
+
+describe('Run tuning on course 101', () => {
+  it('misses at least three rings with PID at Kd 0, without crashing', () => {
+    const run = pidWith({ Kd: 0 })
+    flyToEnd(run)
+    expect(run.status()).toBe('finished')
+    const row = summarize(run)!
+    expect(row.ringsTotal - row.rings).toBeGreaterThanOrEqual(3)
+  })
+
+  it('passes all ten rings with the PID defaults', () => {
+    const run = pidRun()
+    flyToEnd(run)
+    expect(run.status()).toBe('finished')
+    expect(summarize(run)!.rings).toBe(10)
+  })
+})
+
+describe('Run setParam', () => {
+  it('uses the new value on the next control tick and marks the plane retuned', () => {
+    const seen: number[] = []
+    const reading = runWith(
+      { id: 'test', create: (p) => ({ compute: () => (seen.push(p.g), p.g) }) },
+      { g: 0.1 },
+    )
+    const other = runWith(fixed(() => 0), { g: 0.1 })
+    reading.step(4)
+    expect(reading.snapshot().planes[0].u).toBe(0.1)
+    reading.setParam('player', 'g', 0.5)
+    reading.step(1)
+    expect(seen).toEqual([0.1, 0.5])
+    expect(reading.snapshot().planes[0].u).toBe(0.5)
+    expect(reading.snapshot().planes[0].retuned).toBe(true)
+    expect(reading.result('player')!.retuned).toBe(true)
+    expect(summarize(reading)!.tags).toContain('retuned')
+    // Another run is untouched.
+    expect(other.snapshot().planes[0].retuned).toBe(false)
+  })
+
+  it('retunes PID mid-flight: Kd 0.05 applies from the next tick', () => {
+    const run = pidWith({ Kd: 0 })
+    const ref = pidWith({ Kd: 0 })
+    // At t = 11 s the plane climbs at about 9 m/s, unsaturated, so D changes u.
+    run.step(2200)
+    ref.step(2200)
+    run.setParam('player', 'Kd', 0.05)
+    run.step(4)
+    ref.step(4)
+    const a = run.snapshot()
+    const b = ref.snapshot()
+    expect(a.planes[0].retuned).toBe(true)
+    expect(b.planes[0].retuned).toBe(false)
+    expect(a.planes[0].u).not.toBe(b.planes[0].u)
+    flyToEnd(run)
+    expect(summarize(run)!.tags).toEqual(['retuned'])
+  })
+
+  it('ignores the value already set', () => {
+    const run = pidRun()
+    run.setParam('player', 'Kd', defaultParams(pid).Kd)
+    expect(run.snapshot().planes[0].retuned).toBe(false)
+    expect(run.result('player')!.retuned).toBe(false)
+  })
+
+  it('ignores an unknown key, a non-finite value and the wingman, without throwing', () => {
+    const run = pidRun()
+    expect(() => {
+      run.setParam('player', 'Kx', 1)
+      run.setParam('player', 'toString', 1)
+      run.setParam('player', 'Kd', NaN)
+      run.setParam('player', 'Kd', Infinity)
+      run.setParam('wingman', 'Kd', 0.1)
+    }).not.toThrow()
+    expect(run.snapshot().planes[0].retuned).toBe(false)
+    flyToEnd(run)
+    expect(summarize(run)!.tags).toEqual([])
+  })
+
+  it('gives the same result at every batching after the same retune', () => {
+    const rows = [1, 2, 4].map((n) => {
+      const run = pidWith({ Kd: 0 })
+      run.step(2200)
+      run.setParam('player', 'Kd', 0.05)
+      flyToEnd(run, n)
+      return summarize(run)
+    })
+    expect(rows[1]).toEqual(rows[0])
+    expect(rows[2]).toEqual(rows[0])
+  })
+})
+
+describe('Run markChange', () => {
+  it('appends a marker at the current time and leaves earlier snapshots alone', () => {
+    const run = pidRun()
+    run.step(640)
+    const before = run.snapshot()
+    run.markChange('Kd 0 → 0.05')
+    const after = run.snapshot()
+    expect(before.markers).toEqual([])
+    expect(after.markers).toEqual([{ t: 640 * PLANT.dt, label: 'Kd 0 → 0.05' }])
+    expect(after.markers[0].t).toBeCloseTo(3.2, 12)
+    run.step(4)
+    run.markChange('Kp 0.2 → 0.3')
+    expect(after.markers).toHaveLength(1)
+    expect(run.snapshot().markers.map((m) => m.label)).toEqual(['Kd 0 → 0.05', 'Kp 0.2 → 0.3'])
+  })
+
+  it('ignores an empty label and does not mark the plane retuned', () => {
+    const run = pidRun()
+    run.markChange('')
+    expect(run.snapshot().markers).toEqual([])
+    run.markChange('Kd 0 → 0.05')
+    expect(run.snapshot().planes[0].retuned).toBe(false)
+  })
+})

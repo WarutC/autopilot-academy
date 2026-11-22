@@ -16,6 +16,7 @@ import type {
   ControlContext,
   Controller,
   FlightMode,
+  Marker,
   PlaneId,
   PlaneSnapshot,
   PlaneStatus,
@@ -52,6 +53,14 @@ export interface Run extends ScoredRun {
   status(plane?: PlaneId): PlaneStatus | undefined
   /** True when no plane is flying. */
   readonly done: boolean
+  /**
+   * Sets the player's parameter `key` to `value`; the controller reads it on
+   * the next control tick and the plane counts as retuned. An unknown key, a
+   * non-finite value, the value already set or another plane is ignored.
+   */
+  setParam(plane: PlaneId, key: string, value: number): void
+  /** Drops a recorder marker labeled `label` at the current time; an empty label is ignored. */
+  markChange(label: string): void
 }
 
 /** One plane: its plant, controller, estimator state, scoring and trace. */
@@ -62,6 +71,8 @@ interface Plane {
   /** The params record this run owns and the controller reads. */
   readonly params: Record<string, number>
   readonly controller: Controller
+  /** A parameter changed during the flight. */
+  retuned: boolean
   status: PlaneStatus
   plant: PlantState
   u: number
@@ -90,6 +101,7 @@ export function createRun(options: RunOptions): Run {
     mode: options.mode,
     params,
     controller: options.player.algorithm.create(params),
+    retuned: false,
     status: 'flying',
     plant: initialPlant(),
     u: 0,
@@ -105,6 +117,7 @@ export function createRun(options: RunOptions): Run {
     trace: createTrace(rows),
   }
   const planes: readonly Plane[] = [player]
+  const markers: Marker[] = []
 
   /** Physics steps taken so far; the clock is `k·dt`. */
   let k = 0
@@ -195,7 +208,7 @@ export function createRun(options: RunOptions): Run {
       ref: refAt(course, p.plant.x),
       points: p.points,
       results: p.results.slice(),
-      retuned: false,
+      retuned: p.retuned,
     }
   }
 
@@ -216,7 +229,7 @@ export function createRun(options: RunOptions): Run {
         course: course.number,
         planes: planes.map(planeSnapshot),
         rings: course.rings,
-        markers: [],
+        markers: markers.slice(),
         trace: { player: traceView(player.trace) },
       }
     },
@@ -225,6 +238,17 @@ export function createRun(options: RunOptions): Run {
     },
     get done() {
       return isDone()
+    },
+    setParam(plane, key, value) {
+      const p = find(plane)
+      if (plane !== 'player' || !p || !Object.hasOwn(p.params, key)) return
+      if (!Number.isFinite(value) || p.params[key] === value) return
+      p.params[key] = value
+      p.retuned = true
+    },
+    markChange(label) {
+      if (typeof label !== 'string' || label === '') return
+      markers.push({ t: k * dt, label })
     },
     result(plane: PlaneId): PlaneResult | undefined {
       const p = find(plane)
@@ -239,6 +263,7 @@ export function createRun(options: RunOptions): Run {
         ringsTotal: course.rings.length,
         iae: p.iae,
         energy: p.energy,
+        retuned: p.retuned,
       }
     },
   }
