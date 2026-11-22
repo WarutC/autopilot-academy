@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { PLANT, inBand, initialPlant, stepPlant, type PlantState } from './plant.ts'
 
-// The prototype's Sim.step update lines, inlined as the reference.
+// The prototype's Sim.step update lines, inlined as the reference, with the
+// climb-rate damping tuned from the prototype's 1.0 to 0.5.
 function prototypeStep(s: { h: number; v: number; x: number; t: number }, u: number, d: number) {
-  const { dt, a, b, speed } = { dt: 0.005, a: 1.0, b: 20, speed: 20 }
+  const { dt, a, b, speed } = { dt: 0.005, a: 0.5, b: 20, speed: 20 }
   s.v += (-a * s.v + b * u + d) * dt
   s.h += s.v * dt
   s.x += speed * dt
@@ -12,9 +13,10 @@ function prototypeStep(s: { h: number; v: number; x: number; t: number }, u: num
 const prototypeInBand = (h: number) => !(h < 6 || h > 110)
 
 describe('PLANT', () => {
-  it('uses the prototype constants', () => {
+  // Pinned because the course, the PID defaults and the scoring are tuned against these values.
+  it('pins the tuned constants (a = 0.5)', () => {
     expect(PLANT).toEqual({
-      a: 1.0, b: 20, speed: 20, ringGap: 160, ringR: 7, nRings: 10,
+      a: 0.5, b: 20, speed: 20, ringGap: 160, ringR: 7, nRings: 10,
       hFloor: 6, hCeil: 110, hStart: 50, dt: 0.005, Tc: 0.02,
     })
   })

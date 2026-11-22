@@ -65,6 +65,7 @@ describe('summarize', () => {
     ringsTotal: 10,
     iae: 12.5,
     energy: 0.75,
+    retuned: false,
   }
   const runOf = (r: PlaneResult) => ({ result: (plane: string) => (plane === 'player' ? r : undefined) })
 
@@ -84,6 +85,18 @@ describe('summarize', () => {
 
   it('tags a crashed plane', () => {
     expect(summarize(runOf({ ...base, status: 'crashed' }), 'player')?.tags).toEqual(['crashed'])
+  })
+
+  it('tags a retuned plane after crashed', () => {
+    expect(summarize(runOf({ ...base, retuned: true }), 'player')?.tags).toEqual(['retuned'])
+    expect(summarize(runOf({ ...base, status: 'crashed', retuned: true }), 'player')?.tags).toEqual(['crashed', 'retuned'])
+  })
+
+  it('tags a Semi-auto run after crashed and retuned', () => {
+    expect(summarize(runOf({ ...base, mode: 'semi-auto' }), 'player')?.tags).toEqual(['semi-auto'])
+    expect(
+      summarize(runOf({ ...base, mode: 'semi-auto', status: 'crashed', retuned: true }), 'player')?.tags,
+    ).toEqual(['crashed', 'retuned', 'semi-auto'])
   })
 
   it('returns undefined for a missing plane', () => {

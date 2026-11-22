@@ -5,7 +5,7 @@ import { stream } from './rng.ts'
 import type { Ring } from './types.ts'
 
 /** How far past the last ring the course ends, m. */
-export const END_PAST_LAST_RING = 100
+const END_PAST_LAST_RING = 100
 
 export interface Course {
   readonly number: number
@@ -30,9 +30,13 @@ export function makeCourse(n: number): Course {
     rings.push({ x: 200 + i * PLANT.ringGap, h })
     prev = h
   }
-  const bounds = ringBounds(rings)
-  const endX = rings[rings.length - 1].x + END_PAST_LAST_RING
-  return { number: n, rings, bounds, endX }
+  return courseFromRings(n, rings)
+}
+
+/** The course numbered `n` over `rings`; with no rings it ends at 0. */
+export function courseFromRings(n: number, rings: readonly Ring[]): Course {
+  const endX = rings.length > 0 ? rings[rings.length - 1].x + END_PAST_LAST_RING : 0
+  return { number: n, rings, bounds: ringBounds(rings), endX }
 }
 
 /** Where the reference switches to each ring's altitude: half a gap before the first ring, then midway between rings. */

@@ -1,6 +1,6 @@
-// The banner over the scene: Ready for takeoff, Paused, Crashed or Mission
-// complete. A persistent live region announces it; the visible box inside it
-// is added or removed, and never takes input.
+// The banner over the scene: Ready for takeoff, New course loaded, Paused,
+// Crashed or Mission complete. A persistent live region announces it; the
+// visible box inside it is added or removed, and never takes input.
 
 import { ringsPassed, type PlaneResult } from '../sim/scoring.ts'
 import type { Phase } from './flight.ts'
@@ -8,21 +8,38 @@ import type { Phase } from './flight.ts'
 export interface BannerContent {
   readonly title: string
   readonly body: string
+  /** A second line under the body, such as "Retuned". */
+  readonly note?: string
 }
 
-/** What the banner says for a phase and the player's result; undefined hides it. */
-export function bannerContent(phase: Phase, result: PlaneResult | undefined): BannerContent | undefined {
+/**
+ * What the banner says for a phase and the player's result; undefined hides it.
+ * `loadedCourse` is a course the player just loaded, announced while the flight is ready.
+ */
+export function bannerContent(
+  phase: Phase,
+  result: PlaneResult | undefined,
+  loadedCourse?: number,
+): BannerContent | undefined {
+  if (phase === 'ready' && loadedCourse !== undefined) {
+    return {
+      title: 'New course loaded',
+      body: `Course ${loadedCourse}. Share the number so classmates fly the same rings.`,
+    }
+  }
   if (phase === 'ready') return { title: 'Ready for takeoff', body: 'Pick an autopilot, then press Fly.' }
   if (phase === 'paused') return { title: 'Paused', body: 'Retune freely. Changes apply the moment you resume.' }
   if (phase !== 'ended' || !result) return undefined
+  const note = result.retuned ? { note: 'Retuned' } : {}
   if (result.status === 'crashed') {
-    return { title: 'Crashed', body: 'The aircraft left the safe altitude band. Retune and fly again.' }
+    return { title: 'Crashed', body: 'The aircraft left the safe altitude band. Retune and fly again.', ...note }
   }
   if (result.status === 'finished') {
     const passed = ringsPassed(result.results)
     return {
       title: 'Mission complete',
       body: `${result.points.toFixed(1)} points, ${passed} of ${result.ringsTotal} rings.`,
+      ...note,
     }
   }
   return undefined
@@ -46,7 +63,7 @@ export function createBanner(doc: Document): Banner {
   return {
     element,
     update(content) {
-      if (content?.title === shown?.title && content?.body === shown?.body) return
+      if (content?.title === shown?.title && content?.body === shown?.body && content?.note === shown?.note) return
       shown = content
       if (!content) {
         element.replaceChildren()
@@ -61,6 +78,12 @@ export function createBanner(doc: Document): Banner {
       body.className = 'banner-body'
       body.textContent = content.body
       box.append(title, body)
+      if (content.note) {
+        const note = doc.createElement('p')
+        note.className = 'banner-note'
+        note.textContent = content.note
+        box.append(note)
+      }
       element.replaceChildren(box)
     },
   }

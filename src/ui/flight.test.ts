@@ -4,7 +4,9 @@ import pid from '../algorithms/pid.ts'
 import { PLANT } from '../sim/plant.ts'
 import { createRun } from '../sim/run.ts'
 import { summarize } from '../sim/scoring.ts'
-import { createFlight, flyLabel, pauseEnabled, pauseLabel, type Flight, type Phase, type Speed } from './flight.ts'
+import { createPhase } from './store.ts'
+import { createStick } from './input.ts'
+import { createFlight, flyLabel, inFlight, MAX_FRAME, pauseForInterruption, pauseLabel, type Flight, type Phase, type Speed } from './flight.ts'
 
 const pidRun = () =>
   createRun({ course: 101, mode: 'autopilot', player: { algorithm: pid, params: defaultParams(pid) } })
@@ -115,6 +117,24 @@ describe('createFlight', () => {
     expect(t(f)).toBe(0)
   })
 
+  it.each(['ready', 'running', 'paused', 'ended'] as const)('resets from %s to a fresh ready run', (phase) => {
+    let made = 0
+    const f = createFlight(() => (made++, pidRun()))
+    if (phase !== 'ready') f.fly()
+    if (phase === 'running' || phase === 'paused') f.advance(0.003)
+    if (phase === 'paused') f.togglePause()
+    if (phase === 'ended') flyToEnd(f, [0.05])
+    expect(f.phase).toBe(phase)
+    const old = f.run
+    const before = made
+    f.reset()
+    expect(made).toBe(before + 1)
+    expect(f.run).not.toBe(old)
+    expect(f.phase).toBe('ready')
+    expect(t(f)).toBe(0)
+    expect(f.advance(1)).toBe(0)
+  })
+
   it('ends when the run is done and flies again', () => {
     const f = createFlight(pidRun)
     f.fly()
@@ -159,6 +179,23 @@ describe('createFlight', () => {
     expect(scores[0]!.points).toBeGreaterThan(0)
   })
 
+  it('reads and writes the phase through its owner', () => {
+    const owner = createPhase()
+    owner.setPhase('ended')
+    const f = createFlight(pidRun, owner)
+    expect(owner.phase).toBe('ready')
+    f.fly()
+    expect(owner.phase).toBe('running')
+    f.togglePause()
+    expect(owner.phase).toBe('paused')
+    owner.setPhase('running')
+    expect(f.phase).toBe('running')
+    flyToEnd(f, [0.05])
+    expect(owner.phase).toBe('ended')
+    f.reset()
+    expect(owner.phase).toBe('ready')
+  })
+
   it('keeps the sim clock in whole physics steps', () => {
     const f = createFlight(pidRun)
     f.fly()
@@ -169,15 +206,48 @@ describe('createFlight', () => {
 })
 
 describe('labels', () => {
-  const cases: [Phase, string, string, boolean][] = [
-    ['ready', 'Fly', 'Pause', false],
-    ['running', 'Restart', 'Pause', true],
-    ['paused', 'Restart', 'Resume', true],
-    ['ended', 'Fly again', 'Pause', false],
+  const cases: [Phase, string, string][] = [
+    ['ready', 'Fly', 'Pause'],
+    ['running', 'Restart', 'Pause'],
+    ['paused', 'Restart', 'Resume'],
+    ['ended', 'Fly again', 'Pause'],
   ]
-  it.each(cases)('%s: %s, %s, enabled %s', (phase, fly, pause, enabled) => {
+  it.each(cases)('%s: %s, %s', (phase, fly, pause) => {
     expect(flyLabel(phase)).toBe(fly)
     expect(pauseLabel(phase)).toBe(pause)
-    expect(pauseEnabled(phase)).toBe(enabled)
+  })
+})
+
+describe('inFlight', () => {
+  it('holds only while a run is running or paused', () => {
+    expect((['ready', 'running', 'paused', 'ended'] as Phase[]).map(inFlight)).toEqual([false, true, true, false])
+  })
+})
+
+describe('pauseForInterruption', () => {
+  /** A flight in `phase` and a stick holding climb. */
+  function setup(phase: Phase) {
+    const f = createFlight(pidRun)
+    if (phase !== 'ready') f.fly()
+    if (phase === 'paused') f.togglePause()
+    if (phase === 'ended') flyToEnd(f, [MAX_FRAME])
+    expect(f.phase).toBe(phase)
+    const stick = createStick(() => {})
+    stick.press('climb', 'key:w')
+    return { f, stick }
+  }
+
+  it('pauses a running flight and releases the stick', () => {
+    const { f, stick } = setup('running')
+    expect(pauseForInterruption(f, stick)).toBe(true)
+    expect(f.phase).toBe('paused')
+    expect(stick.value).toBe(0)
+  })
+
+  it.each(['ready', 'paused', 'ended'] as const)('leaves a %s flight as it is and still releases the stick', (phase) => {
+    const { f, stick } = setup(phase)
+    expect(pauseForInterruption(f, stick)).toBe(false)
+    expect(f.phase).toBe(phase)
+    expect(stick.value).toBe(0)
   })
 })

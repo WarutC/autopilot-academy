@@ -37,7 +37,7 @@ export interface ControlContext {
   readonly v: number
   /** Manual stick, or 0 outside Manual mode. */
   readonly input: StickInput
-  /** Course reference `ahead` seconds in front of the plane. */
+  /** Reference `ahead` seconds in front of the plane: the course, or the setpoint in Semi-auto. */
   refAhead(ahead: number): number
 }
 
@@ -79,6 +79,7 @@ export interface Trace {
 
 export interface PlaneSnapshot {
   readonly id: PlaneId
+  readonly mode: FlightMode
   readonly status: PlaneStatus
   /** True altitude, in meters. */
   readonly h: number
@@ -92,7 +93,7 @@ export interface PlaneSnapshot {
   readonly hMeas: number
   /** Last altitude estimate, in meters. */
   readonly hEst: number
-  /** Current setpoint, in meters. */
+  /** Current setpoint, in meters: the course reference, or the player's setpoint in Semi-auto. */
   readonly ref: number
   readonly points: number
   readonly results: readonly RingResult[]

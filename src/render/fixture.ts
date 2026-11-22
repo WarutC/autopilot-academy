@@ -69,6 +69,7 @@ export function fixtureSnapshot(flown: number = FIXTURE_FLOWN): Snapshot {
     planes: [
       {
         id: 'player',
+        mode: 'autopilot',
         status: 'flying',
         h,
         v,

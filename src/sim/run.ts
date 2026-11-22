@@ -3,7 +3,7 @@
 
 import { clamp } from './clamp.ts'
 import { makeCourse, refAt, type Course } from './course.ts'
-import { PLANT, inBand, initialPlant, stepPlant, type PlantState } from './plant.ts'
+import { PLANT, SETPOINT_MAX, SETPOINT_MIN, inBand, initialPlant, stepPlant, type PlantState } from './plant.ts'
 import {
   integrateEnergy,
   integrateError,
@@ -16,11 +16,13 @@ import type {
   ControlContext,
   Controller,
   FlightMode,
+  Marker,
   PlaneId,
   PlaneSnapshot,
   PlaneStatus,
   RingResult,
   Snapshot,
+  StickInput,
   Trace,
 } from './types.ts'
 
@@ -52,6 +54,28 @@ export interface Run extends ScoredRun {
   status(plane?: PlaneId): PlaneStatus | undefined
   /** True when no plane is flying. */
   readonly done: boolean
+  /**
+   * Sets the player's parameter `key` to `value`; the controller reads it on
+   * the next control tick and the plane counts as retuned. An unknown key, a
+   * non-finite value, the value already set or another plane is ignored.
+   */
+  setParam(plane: PlaneId, key: string, value: number): void
+  /** Drops a recorder marker labeled `label` at the current time; an empty label is ignored. */
+  markChange(label: string): void
+  /**
+   * Sets the player's stick; the next control tick passes it as `ctx.input`
+   * in Manual mode, and 0 in any other mode. It never counts as a retune and
+   * drops no marker. A value other than -1, 0 or 1 is ignored.
+   */
+  setInput(stick: StickInput): void
+  /**
+   * Sets the player's altitude setpoint; in Semi-auto it replaces the course
+   * reference from the next control tick (`ctx.ref`, `ctx.refAhead`, the
+   * trace) and at once in the snapshot and the IAE. It is stored but unused in
+   * other modes, never counts as a retune and drops no marker. A non-finite
+   * value is ignored; others are clamped to [SETPOINT_MIN, SETPOINT_MAX].
+   */
+  setSetpoint(h: number): void
 }
 
 /** One plane: its plant, controller, estimator state, scoring and trace. */
@@ -62,6 +86,12 @@ interface Plane {
   /** The params record this run owns and the controller reads. */
   readonly params: Record<string, number>
   readonly controller: Controller
+  /** A parameter changed during the flight. */
+  retuned: boolean
+  /** The player's stick, read in Manual mode only. */
+  stick: StickInput
+  /** The player's target altitude, read in Semi-auto mode only. */
+  setpoint: number
   status: PlaneStatus
   plant: PlantState
   u: number
@@ -90,6 +120,9 @@ export function createRun(options: RunOptions): Run {
     mode: options.mode,
     params,
     controller: options.player.algorithm.create(params),
+    retuned: false,
+    stick: 0,
+    setpoint: PLANT.hStart,
     status: 'flying',
     plant: initialPlant(),
     u: 0,
@@ -105,9 +138,15 @@ export function createRun(options: RunOptions): Run {
     trace: createTrace(rows),
   }
   const planes: readonly Plane[] = [player]
+  const markers: Marker[] = []
 
   /** Physics steps taken so far; the clock is `k·dt`. */
   let k = 0
+
+  /** The plane's reference at `x`: its setpoint in Semi-auto, else the course. */
+  function refOf(p: Plane, x: number): number {
+    return p.mode === 'semi-auto' ? p.setpoint : refAt(course, x)
+  }
 
   function controlTick(p: Plane, t: number): void {
     const x = p.plant.x
@@ -117,15 +156,15 @@ export function createRun(options: RunOptions): Run {
     p.yPrev = y
     p.hMeas = y
     p.hEst = y
-    const ref = refAt(course, x)
+    const ref = refOf(p, x)
     const ctx: ControlContext = Object.freeze({
       t,
       T: Tc,
       ref,
       h: p.hEst,
       v: p.vEst,
-      input: 0 as const,
-      refAhead: (ahead: number) => refAt(course, x + speed * ahead),
+      input: p.mode === 'manual' ? p.stick : 0,
+      refAhead: (ahead: number) => refOf(p, x + speed * ahead),
     })
     const raw: unknown = p.controller.compute(ctx)
     p.u = typeof raw === 'number' && Number.isFinite(raw) ? clamp(raw, -1, 1) : 0
@@ -148,7 +187,7 @@ export function createRun(options: RunOptions): Run {
     if (tick) controlTick(p, t)
     p.plant = stepPlant(p.plant, p.u, 0)
     const { h, x } = p.plant
-    p.iae = integrateError(p.iae, refAt(course, x), h, dt)
+    p.iae = integrateError(p.iae, refOf(p, x), h, dt)
     p.energy = integrateEnergy(p.energy, p.u, dt)
 
     const ring = course.rings[p.ringIdx]
@@ -185,6 +224,7 @@ export function createRun(options: RunOptions): Run {
   function planeSnapshot(p: Plane): PlaneSnapshot {
     return {
       id: p.id,
+      mode: p.mode,
       status: p.status,
       h: p.plant.h,
       v: p.plant.v,
@@ -192,10 +232,10 @@ export function createRun(options: RunOptions): Run {
       u: p.u,
       hMeas: p.hMeas,
       hEst: p.hEst,
-      ref: refAt(course, p.plant.x),
+      ref: refOf(p, p.plant.x),
       points: p.points,
       results: p.results.slice(),
-      retuned: false,
+      retuned: p.retuned,
     }
   }
 
@@ -216,7 +256,7 @@ export function createRun(options: RunOptions): Run {
         course: course.number,
         planes: planes.map(planeSnapshot),
         rings: course.rings,
-        markers: [],
+        markers: markers.slice(),
         trace: { player: traceView(player.trace) },
       }
     },
@@ -225,6 +265,25 @@ export function createRun(options: RunOptions): Run {
     },
     get done() {
       return isDone()
+    },
+    setParam(plane, key, value) {
+      const p = find(plane)
+      if (plane !== 'player' || !p || !Object.hasOwn(p.params, key)) return
+      if (!Number.isFinite(value) || p.params[key] === value) return
+      p.params[key] = value
+      p.retuned = true
+    },
+    markChange(label) {
+      if (typeof label !== 'string' || label === '') return
+      markers.push({ t: k * dt, label })
+    },
+    setInput(stick) {
+      if (stick !== -1 && stick !== 0 && stick !== 1) return
+      player.stick = stick === 0 ? 0 : stick // never -0
+    },
+    setSetpoint(h) {
+      if (typeof h !== 'number' || !Number.isFinite(h)) return
+      player.setpoint = clamp(h, SETPOINT_MIN, SETPOINT_MAX)
     },
     result(plane: PlaneId): PlaneResult | undefined {
       const p = find(plane)
@@ -239,6 +298,7 @@ export function createRun(options: RunOptions): Run {
         ringsTotal: course.rings.length,
         iae: p.iae,
         energy: p.energy,
+        retuned: p.retuned,
       }
     },
   }

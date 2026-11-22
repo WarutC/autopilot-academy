@@ -23,6 +23,7 @@ function result(status: PlaneResult['status'], points = 0, passed = 0, total = 1
     ringsTotal: total,
     iae: 0,
     energy: 0,
+    retuned: false,
   }
 }
 
@@ -47,6 +48,19 @@ describe('bannerContent', () => {
       title: 'Ready for takeoff',
       body: 'Pick an autopilot, then press Fly.',
     })
+  })
+
+  it('says New course loaded when ready with a loaded course', () => {
+    expect(bannerContent('ready', undefined, 555)).toEqual({
+      title: 'New course loaded',
+      body: 'Course 555. Share the number so classmates fly the same rings.',
+    })
+  })
+
+  it('ignores a loaded course outside the ready phase', () => {
+    expect(bannerContent('running', result('flying'), 555)).toBeUndefined()
+    expect(bannerContent('paused', result('flying'), 555)?.title).toBe('Paused')
+    expect(bannerContent('ended', result('finished', 74.2, 8, 10), 555)?.title).toBe('Mission complete')
   })
 
   it('shows nothing while running', () => {
@@ -74,6 +88,19 @@ describe('bannerContent', () => {
     })
   })
 
+  it('adds a Retuned note to Mission complete and Crashed for retuned results only', () => {
+    const retuned = (status: PlaneResult['status']) => ({ ...result(status, 74.2, 8), retuned: true })
+    expect(bannerContent('ended', retuned('finished'))).toEqual({
+      title: 'Mission complete',
+      body: '74.2 points, 8 of 10 rings.',
+      note: 'Retuned',
+    })
+    expect(bannerContent('ended', retuned('crashed'))?.note).toBe('Retuned')
+    expect(bannerContent('ended', result('finished', 74.2, 8))).not.toHaveProperty('note')
+    expect(bannerContent('ended', result('crashed'))).not.toHaveProperty('note')
+    expect(bannerContent('paused', retuned('flying'))).not.toHaveProperty('note')
+  })
+
   it('shows nothing for an ended flight without a result', () => {
     expect(() => bannerContent('ended', undefined)).not.toThrow()
     expect(bannerContent('ended', undefined)).toBeUndefined()
@@ -97,6 +124,21 @@ describe('banner end to end', () => {
     expect(shown(a)!.title).toBe('Mission complete')
     expect(shown(a)!.body).toMatch(/^\d+\.\d points, \d+ of 10 rings\.$/)
     expect(shown(b)).toEqual(shown(a))
+  })
+
+  it('shows Retuned at the end of a flight retuned mid-flight, and not otherwise', () => {
+    const retuned = createFlight(runWith(pid))
+    retuned.fly()
+    for (let i = 0; i < 120; i++) retuned.advance(1 / 60)
+    retuned.run.setParam('player', 'Kd', 0.1)
+    retuned.run.markChange('Kd 0.05 → 0.1')
+    for (let i = 0; retuned.phase === 'running' && i < 1e6; i++) retuned.advance(1 / 60)
+    expect(retuned.phase).toBe('ended')
+    expect(shown(retuned)?.note).toBe('Retuned')
+    const plain = createFlight(runWith(pid))
+    flyToEnd(plain, 4)
+    expect(shown(plain)?.title).toBe('Mission complete')
+    expect(shown(plain)?.note).toBeUndefined()
   })
 
   it('crashes the dive controller on course 101', () => {
@@ -171,6 +213,23 @@ describe('createBanner', () => {
     const writes = log.length
     banner.update({ title: 'Paused', body: 'Retune freely. Changes apply the moment you resume.' })
     expect(log.length).toBe(writes)
+  })
+
+  it('renders the note as a second paragraph and rewrites when only the note changes', () => {
+    const { doc, log } = fakeDocument()
+    const banner = createBanner(doc)
+    const region = banner.element as unknown as FakeElement
+    banner.update({ title: 'Mission complete', body: '74.2 points, 8 of 10 rings.' })
+    expect(region.children[0]!.children).toHaveLength(2)
+    const writes = log.length
+    banner.update({ title: 'Mission complete', body: '74.2 points, 8 of 10 rings.', note: 'Retuned' })
+    expect(log.length).toBeGreaterThan(writes)
+    const box = region.children[0]!
+    expect(box.children.map((c) => c.className)).toEqual(['banner-title', 'banner-body', 'banner-note'])
+    expect(box.children[2]!.textContent).toBe('Retuned')
+    const after = log.length
+    banner.update({ title: 'Mission complete', body: '74.2 points, 8 of 10 rings.', note: 'Retuned' })
+    expect(log.length).toBe(after)
   })
 
   it('removes the box but keeps the region on clear', () => {

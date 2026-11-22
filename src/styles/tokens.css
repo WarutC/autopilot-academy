@@ -66,6 +66,8 @@
   --chip-on: #13294B;
   --chip-on-ink: #FFFFFF;
   --focus: #F5B700;
+  /* A dark band around the yellow ring, so focus reaches 3:1 on light surfaces. */
+  --focus-halo: #13294B;
 
   --font-condensed: 'Barlow Condensed', 'Arial Narrow', Barlow, sans-serif;
   --font-body: Barlow, 'Segoe UI', system-ui, sans-serif;
@@ -86,7 +88,7 @@
     --muted: #9AAEC6;
     --panel: #14223A;
     --line: #2A3E5A;
-    --strong: #4C6688;
+    --strong: #6380A6;
     --field: #1A2C48;
     --accent: #FF5960;
     --ghost: #7BA2FF;
@@ -95,5 +97,6 @@
     --refline: #E4ECF6;
     --chip-on: #F5B700;
     --chip-on-ink: #13294B;
+    --focus-halo: #0D1828;
   }
 }

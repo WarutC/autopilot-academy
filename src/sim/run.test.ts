@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { defaultParams } from '../algorithms/index.ts'
+import manual from '../algorithms/manual.ts'
 import pid from '../algorithms/pid.ts'
 import { makeCourse } from './course.ts'
-import { PLANT } from './plant.ts'
+import { PLANT, SETPOINT_MAX, SETPOINT_MIN } from './plant.ts'
 import { createRun, type Run, type RunAlgorithm } from './run.ts'
 import { ringsPassed, summarize } from './scoring.ts'
 import type { ControlContext, Snapshot } from './types.ts'
@@ -241,5 +242,277 @@ describe('Run bad controller output', () => {
     expect(run.snapshot().t).toBe(0)
     run.step(Infinity)
     expect(run.done).toBe(true)
+  })
+})
+
+const pidWith = (overrides: Record<string, number>) =>
+  createRun({ course: 101, mode: 'autopilot', player: { algorithm: pid, params: { ...defaultParams(pid), ...overrides } } })
+
+describe('Run tuning on course 101', () => {
+  it('misses at least three rings with PID at Kd 0, without crashing', () => {
+    const run = pidWith({ Kd: 0 })
+    flyToEnd(run)
+    expect(run.status()).toBe('finished')
+    const row = summarize(run)!
+    expect(row.ringsTotal - row.rings).toBeGreaterThanOrEqual(3)
+  })
+
+  it('passes all ten rings with the PID defaults', () => {
+    const run = pidRun()
+    flyToEnd(run)
+    expect(run.status()).toBe('finished')
+    expect(summarize(run)!.rings).toBe(10)
+  })
+})
+
+describe('Run setParam', () => {
+  it('uses the new value on the next control tick and marks the plane retuned', () => {
+    const seen: number[] = []
+    const reading = runWith(
+      { id: 'test', create: (p) => ({ compute: () => (seen.push(p.g), p.g) }) },
+      { g: 0.1 },
+    )
+    const other = runWith(fixed(() => 0), { g: 0.1 })
+    reading.step(4)
+    expect(reading.snapshot().planes[0].u).toBe(0.1)
+    reading.setParam('player', 'g', 0.5)
+    reading.step(1)
+    expect(seen).toEqual([0.1, 0.5])
+    expect(reading.snapshot().planes[0].u).toBe(0.5)
+    expect(reading.snapshot().planes[0].retuned).toBe(true)
+    expect(reading.result('player')!.retuned).toBe(true)
+    expect(summarize(reading)!.tags).toContain('retuned')
+    // Another run is untouched.
+    expect(other.snapshot().planes[0].retuned).toBe(false)
+  })
+
+  it('retunes PID mid-flight: Kd 0.05 applies from the next tick', () => {
+    const run = pidWith({ Kd: 0 })
+    const ref = pidWith({ Kd: 0 })
+    // At t = 11 s the plane climbs at about 9 m/s, unsaturated, so D changes u.
+    run.step(2200)
+    ref.step(2200)
+    run.setParam('player', 'Kd', 0.05)
+    run.step(4)
+    ref.step(4)
+    const a = run.snapshot()
+    const b = ref.snapshot()
+    expect(a.planes[0].retuned).toBe(true)
+    expect(b.planes[0].retuned).toBe(false)
+    expect(a.planes[0].u).not.toBe(b.planes[0].u)
+    flyToEnd(run)
+    expect(summarize(run)!.tags).toEqual(['retuned'])
+  })
+
+  it('settles the oscillation after Kd 0 is raised to 0.05 at 2 s, before the first ring', () => {
+    const steady = pidWith({ Kd: 0 })
+    const raised = pidWith({ Kd: 0 })
+    raised.step(Math.round(2 / PLANT.dt))
+    raised.setParam('player', 'Kd', 0.05)
+    flyToEnd(steady)
+    flyToEnd(raised)
+    expect(summarize(steady)!.rings).toBe(7)
+    expect(summarize(raised)!.rings).toBe(10)
+    expect(raised.status()).toBe('finished')
+  })
+
+  it('ignores the value already set', () => {
+    const run = pidRun()
+    run.setParam('player', 'Kd', defaultParams(pid).Kd)
+    expect(run.snapshot().planes[0].retuned).toBe(false)
+    expect(run.result('player')!.retuned).toBe(false)
+  })
+
+  it('ignores an unknown key, a non-finite value and the wingman, without throwing', () => {
+    const run = pidRun()
+    expect(() => {
+      run.setParam('player', 'Kx', 1)
+      run.setParam('player', 'toString', 1)
+      run.setParam('player', 'Kd', NaN)
+      run.setParam('player', 'Kd', Infinity)
+      run.setParam('wingman', 'Kd', 0.1)
+    }).not.toThrow()
+    expect(run.snapshot().planes[0].retuned).toBe(false)
+    flyToEnd(run)
+    expect(summarize(run)!.tags).toEqual([])
+  })
+
+  it('gives the same result at every batching after the same retune', () => {
+    const rows = [1, 2, 4].map((n) => {
+      const run = pidWith({ Kd: 0 })
+      run.step(2200)
+      run.setParam('player', 'Kd', 0.05)
+      flyToEnd(run, n)
+      return summarize(run)
+    })
+    expect(rows[1]).toEqual(rows[0])
+    expect(rows[2]).toEqual(rows[0])
+  })
+})
+
+describe('Run markChange', () => {
+  it('appends a marker at the current time and leaves earlier snapshots alone', () => {
+    const run = pidRun()
+    run.step(640)
+    const before = run.snapshot()
+    run.markChange('Kd 0 → 0.05')
+    const after = run.snapshot()
+    expect(before.markers).toEqual([])
+    expect(after.markers).toEqual([{ t: 640 * PLANT.dt, label: 'Kd 0 → 0.05' }])
+    expect(after.markers[0].t).toBeCloseTo(3.2, 12)
+    run.step(4)
+    run.markChange('Kp 0.2 → 0.3')
+    expect(after.markers).toHaveLength(1)
+    expect(run.snapshot().markers.map((m) => m.label)).toEqual(['Kd 0 → 0.05', 'Kp 0.2 → 0.3'])
+  })
+
+  it('ignores an empty label and does not mark the plane retuned', () => {
+    const run = pidRun()
+    run.markChange('')
+    expect(run.snapshot().markers).toEqual([])
+    run.markChange('Kd 0 → 0.05')
+    expect(run.snapshot().planes[0].retuned).toBe(false)
+  })
+})
+
+const manualWith = (algorithm: RunAlgorithm) =>
+  createRun({ course: 101, mode: 'manual', player: { algorithm, params: {} } })
+
+describe('Run setInput', () => {
+  it('passes the stick as ctx.input on the next control tick in Manual mode', () => {
+    const inputs: number[] = []
+    const run = manualWith(fixed((ctx) => (inputs.push(ctx.input), 0)))
+    run.step(4)
+    run.setInput(1)
+    run.step(4)
+    run.setInput(-1)
+    run.step(4)
+    run.setInput(0)
+    run.step(4)
+    expect(inputs).toEqual([0, 1, -1, 0])
+    const s = run.snapshot()
+    expect(s.planes[0].retuned).toBe(false)
+    expect(s.markers).toEqual([])
+    expect(run.result('player')!.retuned).toBe(false)
+  })
+
+  it('uses a stick set before the first step on the first control tick', () => {
+    const inputs: number[] = []
+    const run = manualWith(fixed((ctx) => (inputs.push(ctx.input), 0)))
+    run.setInput(1)
+    run.step(1)
+    expect(inputs).toEqual([1])
+  })
+
+  it('keeps ctx.input at 0 outside Manual mode', () => {
+    const inputs: number[] = []
+    const run = runWith(fixed((ctx) => (inputs.push(ctx.input), 0)))
+    run.setInput(1)
+    run.step(8)
+    expect(inputs).toEqual([0, 0])
+  })
+
+  it('ignores values other than -1, 0 and 1, without throwing', () => {
+    const inputs: number[] = []
+    const run = manualWith(fixed((ctx) => (inputs.push(ctx.input), 0)))
+    run.setInput(1)
+    expect(() => {
+      for (const bad of [0.5, NaN, 2, Infinity]) run.setInput(bad as never)
+    }).not.toThrow()
+    run.step(1)
+    expect(inputs).toEqual([1])
+  })
+
+  it('climbs above hStart within 1 s with the Manual lesson holding ▲', () => {
+    const run = createRun({ course: 101, mode: 'manual', player: { algorithm: manual, params: {} } })
+    run.setInput(1)
+    run.step(Math.round(1 / PLANT.dt))
+    expect(run.snapshot().planes[0].h).toBeGreaterThan(PLANT.hStart)
+    expect(run.status()).toBe('flying')
+  })
+})
+
+const semiWith = (algorithm: RunAlgorithm, params: Record<string, number> = {}) =>
+  createRun({ course: 101, mode: 'semi-auto', player: { algorithm, params } })
+
+describe('Run setSetpoint', () => {
+  it('drives ctx.ref, refAhead and the trace from the next tick, and the snapshot at once, in Semi-auto', () => {
+    const seen: ControlContext[] = []
+    const run = semiWith(fixed((ctx) => (seen.push(ctx), 0)))
+    run.step(4)
+    run.setSetpoint(80)
+    expect(run.snapshot().planes[0].ref).toBe(80)
+    expect(run.snapshot().planes[0].mode).toBe('semi-auto')
+    run.step(4)
+    expect(seen).toHaveLength(2)
+    expect(seen[0].ref).toBe(PLANT.hStart)
+    expect(seen[1].ref).toBe(80)
+    expect(seen[1].refAhead(2)).toBe(80)
+    expect(seen[1].refAhead(140 / PLANT.speed)).toBe(80)
+    const tr = run.snapshot().trace.player!
+    expect(tr.ref[0]).toBe(PLANT.hStart)
+    expect(tr.ref[1]).toBe(80)
+    const s = run.snapshot()
+    expect(s.planes[0].retuned).toBe(false)
+    expect(s.markers).toEqual([])
+    expect(run.result('player')!.retuned).toBe(false)
+  })
+
+  it('defaults to hStart in a new Semi-auto run', () => {
+    const seen: ControlContext[] = []
+    const run = semiWith(fixed((ctx) => (seen.push(ctx), 0)))
+    expect(run.snapshot().planes[0].ref).toBe(PLANT.hStart)
+    // Past the first course boundary the reference stays at hStart.
+    run.step(1400)
+    expect(seen.at(-1)!.ref).toBe(PLANT.hStart)
+    expect(seen.at(-1)!.refAhead(7)).toBe(PLANT.hStart)
+    // u = 0 holds hStart, so the IAE stays zero.
+    expect(run.result('player')!.iae).toBe(0)
+  })
+
+  it('is stored but unused outside Semi-auto', () => {
+    const seen: ControlContext[] = []
+    const run = runWith(fixed((ctx) => (seen.push(ctx), 0)))
+    run.setSetpoint(80)
+    run.step(4)
+    expect(seen[0].ref).toBe(PLANT.hStart)
+    expect(seen[0].refAhead(140 / PLANT.speed)).toBe(makeCourse(101).rings[0].h)
+    expect(run.snapshot().planes[0].ref).toBe(PLANT.hStart)
+    expect(run.snapshot().planes[0].mode).toBe('autopilot')
+  })
+
+  it('ignores non-finite values and clamps one ring radius inside the safe band, without throwing', () => {
+    const run = semiWith(fixed(() => 0))
+    run.setSetpoint(70)
+    expect(() => {
+      run.setSetpoint(NaN)
+      run.setSetpoint(Infinity)
+      run.setSetpoint(-Infinity)
+    }).not.toThrow()
+    expect(run.snapshot().planes[0].ref).toBe(70)
+    run.setSetpoint(500)
+    expect(run.snapshot().planes[0].ref).toBe(103)
+    run.setSetpoint(-3)
+    expect(run.snapshot().planes[0].ref).toBe(13)
+    run.setSetpoint(PLANT.hCeil)
+    expect(run.snapshot().planes[0].ref).toBe(SETPOINT_MAX)
+    run.setSetpoint(PLANT.hFloor)
+    expect(run.snapshot().planes[0].ref).toBe(SETPOINT_MIN)
+  })
+
+  it('measures the IAE against the setpoint in Semi-auto', () => {
+    const run = semiWith(fixed(() => 0))
+    run.setSetpoint(60)
+    run.step(100)
+    expect(run.result('player')!.iae).toBeCloseTo(10 * PLANT.dt * 100, 9)
+  })
+
+  it('brings PID to within 2 m of a 70 m setpoint after 6 s', () => {
+    const run = createRun({ course: 101, mode: 'semi-auto', player: { algorithm: pid, params: defaultParams(pid) } })
+    run.setSetpoint(70)
+    run.step(Math.round(6 / PLANT.dt))
+    expect(run.status()).toBe('flying')
+    expect(Math.abs(run.snapshot().planes[0].h - 70)).toBeLessThanOrEqual(2)
+    expect(summarize(run, 'player')!.tags).toEqual(['semi-auto'])
   })
 })

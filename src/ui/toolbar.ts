@@ -1,19 +1,29 @@
-// The flight toolbar: Fly (Restart, Fly again), Pause (Resume) and the
-// simulation speed segmented control, built from native buttons.
+// The flight toolbar: Fly (Restart, Fly again), Pause (Resume), the
+// simulation speed segmented control, the Course number field and New course,
+// built from native controls.
 
-import { SPEEDS, flyLabel, pauseEnabled, pauseLabel, type Phase, type Speed } from './flight.ts'
+import { SPEEDS, flyLabel, inFlight, pauseLabel, type Phase, type Speed } from './flight.ts'
+import { validCourse } from './persistence.ts'
 
 export interface ToolbarHandlers {
   fly(): void
   togglePause(): void
   setSpeed(speed: Speed): void
+  /** A valid course number, different from the current one, was entered. */
+  setCourse(course: number): void
+  newCourse(): void
 }
 
 export interface Toolbar {
   readonly element: HTMLElement
-  /** Reflects the phase and speed into labels, `disabled` and `aria-pressed`; unchanged values are not rewritten. */
-  update(phase: Phase, speed: Speed): void
+  /**
+   * Reflects the phase, speed and course into labels, values, `disabled` and
+   * `aria-pressed`; unchanged values are not rewritten, so typing is never clobbered.
+   */
+  update(phase: Phase, speed: Speed, course: number): void
 }
+
+const COURSE_FIELD_ID = 'course-field'
 
 function button(doc: Document, className: string): HTMLButtonElement {
   const b = doc.createElement('button')
@@ -48,14 +58,42 @@ export function createToolbar(doc: Document, handlers: ToolbarHandlers): Toolbar
     return { speed, b }
   })
 
-  element.append(fly, pause, seg)
+  const courseLabel = doc.createElement('label')
+  courseLabel.className = 'course-label'
+  courseLabel.htmlFor = COURSE_FIELD_ID
+  courseLabel.textContent = 'Course'
+  const courseField = doc.createElement('input')
+  courseField.type = 'text'
+  courseField.id = COURSE_FIELD_ID
+  courseField.className = 'course-field'
+  courseField.inputMode = 'numeric'
+  courseField.autocomplete = 'off'
+  courseField.setAttribute('aria-label', 'Course number')
+  courseLabel.append(courseField)
+
+  const newCourse = button(doc, 'btn')
+  newCourse.textContent = 'New course'
+  newCourse.addEventListener('click', () => handlers.newCourse())
+
+  /** The course last shown in the field; undefined until the first update. */
+  let shownCourse: number | undefined
+
+  courseField.addEventListener('change', () => {
+    const text = courseField.value.trim()
+    const course = /^\d+$/.test(text) ? Number(text) : NaN
+    if (validCourse(course) && course !== shownCourse) handlers.setCourse(course)
+    // An accepted course is already shown; a rejected, same or invalid one shows the current course again.
+    if (shownCourse !== undefined) courseField.value = String(shownCourse)
+  })
+
+  element.append(fly, pause, seg, courseLabel, newCourse)
 
   return {
     element,
-    update(phase, speed) {
+    update(phase, speed, course) {
       setText(fly, flyLabel(phase))
       setText(pause, pauseLabel(phase))
-      const disabled = !pauseEnabled(phase)
+      const disabled = !inFlight(phase)
       if (pause.disabled !== disabled) {
         // A disabled button loses focus to the page, so hand it to Fly first.
         if (disabled && doc.activeElement === pause) fly.focus()
@@ -64,6 +102,17 @@ export function createToolbar(doc: Document, handlers: ToolbarHandlers): Toolbar
       for (const { speed: s, b } of speedButtons) {
         const pressed = String(s === speed)
         if (b.getAttribute('aria-pressed') !== pressed) b.setAttribute('aria-pressed', pressed)
+      }
+      if (course !== shownCourse) {
+        shownCourse = course
+        courseField.value = String(course)
+      }
+      const locked = inFlight(phase)
+      if (courseField.disabled !== locked || newCourse.disabled !== locked) {
+        // A disabled control loses focus to the page, so hand it to Fly first.
+        if (locked && (doc.activeElement === courseField || doc.activeElement === newCourse)) fly.focus()
+        courseField.disabled = locked
+        newCourse.disabled = locked
       }
     },
   }

@@ -1,12 +1,15 @@
-// The flight controller: the phase, the current run, the playback speed and
-// the wall-clock to physics-step accumulator. No DOM and no clock of its own;
+// The flight controller: the phase transitions, the current run, the playback
+// speed and the wall-clock to physics-step accumulator. The phase itself lives
+// in a phase owner (the store in the app). No DOM and no clock of its own;
 // the frame loop feeds it elapsed seconds.
 
 import { PLANT } from '../sim/plant.ts'
 import type { Run } from '../sim/run.ts'
 import type { Snapshot } from '../sim/types.ts'
+import type { Stick } from './input.ts'
+import { createPhase, type Phase, type PhaseOwner } from './store.ts'
 
-export type Phase = 'ready' | 'running' | 'paused' | 'ended'
+export type { Phase } from './store.ts'
 export type Speed = 1 | 2 | 4
 
 export const SPEEDS: readonly Speed[] = [1, 2, 4]
@@ -20,6 +23,8 @@ export interface Flight {
   readonly run: Run
   /** Starts a new run: Fly, Restart or Fly again. */
   fly(): void
+  /** Replaces the run with a fresh one that has not started; the phase becomes ready. */
+  reset(): void
   /** Pauses a running flight or resumes a paused one; other phases are unchanged. */
   togglePause(): void
   setSpeed(speed: Speed): void
@@ -32,15 +37,16 @@ function clampElapsed(elapsed: number): number {
   return Number.isFinite(elapsed) && elapsed > 0 ? Math.min(elapsed, MAX_FRAME) : 0
 }
 
-export function createFlight(makeRun: () => Run): Flight {
-  let phase: Phase = 'ready'
+/** `owner` holds the phase; the flight reads and writes it there and keeps only the transitions. */
+export function createFlight(makeRun: () => Run, owner: PhaseOwner = createPhase()): Flight {
+  owner.setPhase('ready')
   let speed: Speed = 1
   let run = makeRun()
   let acc = 0
 
   return {
     get phase() {
-      return phase
+      return owner.phase
     },
     get speed() {
       return speed
@@ -51,11 +57,16 @@ export function createFlight(makeRun: () => Run): Flight {
     fly() {
       run = makeRun()
       acc = 0
-      phase = run.done ? 'ended' : 'running'
+      owner.setPhase(run.done ? 'ended' : 'running')
+    },
+    reset() {
+      run = makeRun()
+      acc = 0
+      owner.setPhase('ready')
     },
     togglePause() {
-      if (phase === 'running') phase = 'paused'
-      else if (phase === 'paused') phase = 'running'
+      if (owner.phase === 'running') owner.setPhase('paused')
+      else if (owner.phase === 'paused') owner.setPhase('running')
       else return
       acc = 0
     },
@@ -63,7 +74,7 @@ export function createFlight(makeRun: () => Run): Flight {
       if (SPEEDS.includes(s)) speed = s
     },
     advance(elapsedSec) {
-      if (phase !== 'running') return 0
+      if (owner.phase !== 'running') return 0
       acc += clampElapsed(elapsedSec) * speed
       // The epsilon keeps a whole number of steps from flooring one short.
       const n = Math.floor(acc / PLANT.dt + 1e-9)
@@ -74,13 +85,25 @@ export function createFlight(makeRun: () => Run): Flight {
         run.step(1)
         taken++
       }
-      if (run.done) phase = 'ended'
+      if (run.done) owner.setPhase('ended')
       return taken
     },
     snapshot() {
       return run.snapshot()
     },
   }
+}
+
+/**
+ * The player looked away (a hidden tab, a rotation, the drawer opening):
+ * releases the stick and pauses a running flight; any other phase is left as
+ * it is. Returns true when it paused.
+ */
+export function pauseForInterruption(flight: Flight, stick: Pick<Stick, 'releaseAll'>): boolean {
+  stick.releaseAll()
+  if (flight.phase !== 'running') return false
+  flight.togglePause()
+  return true
 }
 
 export function flyLabel(phase: Phase): string {
@@ -93,6 +116,7 @@ export function pauseLabel(phase: Phase): string {
   return phase === 'paused' ? 'Resume' : 'Pause'
 }
 
-export function pauseEnabled(phase: Phase): boolean {
+/** True while a run is flying or paused, so a parameter change retunes it; outside a run it only affects the next Fly. */
+export function inFlight(phase: Phase): boolean {
   return phase === 'running' || phase === 'paused'
 }
