@@ -96,7 +96,9 @@ function setup(params = defaultParams(pid)) {
     const find = (c: string) => inner.find((e) => e.className === c)
     return { field: find('param-number'), slider: find('param-slider'), check: find('param-check'), label: find('param-label')! }
   }
-  return { doc, calls, handlers, card, root, els, byClass, live, row }
+  /** The chip for module `id`, found by its index in the registry. */
+  const chip = (id: string) => byClass('lesson-chip')[algorithms.findIndex((m) => m.id === id)]!
+  return { doc, calls, handlers, card, root, els, byClass, live, row, chip }
 }
 
 describe('createAutopilotCard', () => {
@@ -221,30 +223,32 @@ describe('createAutopilotCard', () => {
       expect(lines).toEqual([`Lesson ${i + 1}`, m.name, m.tag])
       expect(chips[i]!.getAttribute('aria-pressed')).toBe(String(m.id === 'pid'))
     })
-    expect(chips.slice(0, 2).map((c) => c.children[1])).toMatchObject([{ textContent: 'Manual' }, { textContent: 'PID' }])
+    const chipOf = (id: string) => chips[algorithms.findIndex((m) => m.id === id)]!
+    expect(chipOf('manual').children[1]).toMatchObject({ textContent: 'Manual' })
+    expect(chipOf('pid').children[1]).toMatchObject({ textContent: 'PID' })
   })
 
   it('calls select when a chip is clicked', () => {
-    const { calls, byClass } = setup()
-    byClass('lesson-chip')[0]!.fire('click')
+    const { calls, chip } = setup()
+    chip('manual').fire('click')
     expect(calls).toEqual(['select manual'])
   })
 
   it('ignores a click on another chip in flight', () => {
-    const { calls, card, byClass } = setup()
+    const { calls, card, chip } = setup()
     card.setPhase('running')
-    byClass('lesson-chip')[0]!.fire('click')
+    chip('manual').fire('click')
     expect(calls).toEqual([])
     card.setPhase('ended')
-    byClass('lesson-chip')[0]!.fire('click')
+    chip('manual').fire('click')
     expect(calls).toEqual(['select manual'])
   })
 
   it('disables every chip but the selected one in flight, moving focus off a disabled chip', () => {
-    const { doc, card, byClass } = setup()
+    const { doc, card, byClass, chip } = setup()
     const chips = byClass('lesson-chip')
-    const pidChip = chips[algorithms.findIndex((m) => m.id === 'pid')]!
-    chips[0]!.focus()
+    const pidChip = chip('pid')
+    chip('manual').focus()
     for (const phase of ['running', 'paused'] as const) {
       card.setPhase(phase)
       expect(chips.map((c) => c.disabled)).toEqual(algorithms.map((m) => m.id !== 'pid'))

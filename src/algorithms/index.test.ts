@@ -33,8 +33,22 @@ describe('algorithms (the real registry)', () => {
     expect(algorithms.map((m) => m.id)).toContain('pid')
   })
 
-  it('lists manual first, then pid', () => {
-    expect(algorithms.map((m) => m.id).slice(0, 2)).toEqual(['manual', 'pid'])
+  it('lists the registered built-ins in BUILT_IN_ORDER, then community modules', () => {
+    const ids = algorithms.map((m) => m.id)
+    const builtIns = algorithms.filter((m) => !m.community).map((m) => m.id)
+    expect(builtIns).toEqual(BUILT_IN_ORDER.filter((id) => ids.includes(id)))
+    expect(ids.slice(0, builtIns.length)).toEqual(builtIns)
+    expect(ids[0]).toBe('manual')
+  })
+
+  it('registers no helper under ./lib/', () => {
+    const libIds = Object.keys(import.meta.glob('./lib/*.ts')).map((path) =>
+      path.slice(path.lastIndexOf('/') + 1).replace(/\.ts$/, ''),
+    )
+    expect(libIds.length).toBeGreaterThan(0)
+    for (const id of libIds) expect(findAlgorithm(id)).toBeUndefined()
+    expect(algorithms.map((m) => m.id)).not.toContain('poly')
+    expect(algorithms.map((m) => m.id)).not.toContain('fly-course')
   })
 
   it('loads without warnings, holds pid and has no duplicate ids', async () => {

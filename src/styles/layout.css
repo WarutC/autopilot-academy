@@ -646,6 +646,8 @@ body {
     width: min(380px, 88vw);
     padding: 8px 16px;
     align-content: start;
+    /* Cards clip their overflow, so without this the rows shrink to the panel height and cut the cards off; the panel scrolls instead. */
+    grid-auto-rows: max-content;
     overflow-y: auto;
     overscroll-behavior: contain;
     background: var(--bg);
@@ -679,4 +681,52 @@ body {
 
 .recorder-card.expanded .recorder {
   height: 320px;
+}
+
+/* Pole readout: the s-plane beside the pole, gain or look-ahead list; the list wraps under the plot on a narrow card. */
+.pole-readout-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.pole-readout-plot {
+  box-sizing: border-box;
+  display: block;
+  flex: none;
+  width: 160px;
+  height: 160px;
+  background: var(--field);
+  border: 2px solid var(--line);
+  border-radius: 8px;
+}
+
+.pole-readout-text {
+  flex: 1 1 140px;
+  min-width: 0;
+  font: var(--type-body);
+}
+
+.pole-readout-heading {
+  margin: 0;
+  font: var(--type-label);
+  font-weight: 700;
+}
+
+.pole-readout-list {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  font: var(--type-number);
+  font-variant-numeric: tabular-nums;
+}
+
+.pole-readout-lookahead {
+  margin: 0;
+}
+
+.pole-readout[hidden],
+.pole-readout-plot[hidden] {
+  display: none;
 }

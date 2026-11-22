@@ -3,6 +3,7 @@ import './styles/layout.css'
 import { algorithms, findAlgorithm, type AlgorithmModule } from './algorithms/index.ts'
 import { draw as drawRecorder } from './render/recorder.ts'
 import { draw as drawScene } from './render/scene.ts'
+import { draw as drawSplane } from './render/splane.ts'
 import { PLANT, SETPOINT_MAX, SETPOINT_MIN } from './sim/plant.ts'
 import { createRun, type Run, type RunPlayer } from './sim/run.ts'
 import type { FlightMode, Snapshot } from './sim/types.ts'
@@ -13,6 +14,7 @@ import { createDrawer, PHONE_LANDSCAPE } from './ui/drawer.ts'
 import { createFlight, inFlight, pauseForInterruption, type Phase } from './ui/flight.ts'
 import { createStick, gameKey, typingTarget } from './ui/input.ts'
 import { createModeSwitch } from './ui/mode-switch.ts'
+import { createPoleReadout } from './ui/pole-readout.ts'
 import { browserStorage, validCourse } from './ui/persistence.ts'
 import { createRouter, drawCourse, parseRoute } from './ui/router.ts'
 import { createScoreMirror } from './ui/score-mirror.ts'
@@ -147,12 +149,18 @@ const autopilotCard = createAutopilotCard(document, algorithms, lesson.id, playe
     lesson: () => lesson.id,
     setParams(params) {
       player = { ...player, params }
+      requestReadout()
     },
     marked: requestDraw,
   }),
   select: selectLesson,
 })
 side.append(autopilotCard.element)
+
+/** The selected lesson's closed-loop poles, gains or look-ahead, under the Autopilot card. */
+const poleReadout = createPoleReadout(document)
+const poleCtx = poleReadout.canvas.getContext('2d')!
+side.append(poleReadout.element)
 
 /** Switches to another lesson outside a flight, from a chip or the address. */
 function selectLesson(id: string): void {
@@ -162,6 +170,7 @@ function selectLesson(id: string): void {
   lesson = next
   player = { algorithm: next, params: store.params(next.id) }
   autopilotCard.setLesson(next, player.params)
+  requestReadout()
   stickButtons.setVisible(flysByHand(next))
   stick.releaseAll()
   loadedCourse = undefined
@@ -237,8 +246,16 @@ let theme = loadTheme()
 /** A dev-only fixture shown instead of the run while the flight is ready. */
 let fixture: Snapshot | undefined
 let needsDraw = true
+/** The Pole readout needs its text and plot rebuilt on the next draw. */
+let readoutDirty = true
 
 function requestDraw(): void {
+  needsDraw = true
+}
+
+/** Rebuilds the Pole readout on the next frame: after a parameter, lesson, theme or size change. */
+function requestReadout(): void {
+  readoutDirty = true
   needsDraw = true
 }
 
@@ -283,6 +300,13 @@ function draw(): void {
   drawScene(ctx, snapshot, theme, fitCanvas(canvas))
   drawRecorder(recorderCtx, snapshot, theme, fitCanvas(recorderCanvas))
   mirror.update(snapshot)
+  if (readoutDirty) {
+    readoutDirty = false
+    // The selected lesson and its own params, not the flying algorithm's, so a dev controller never hides the readout.
+    const analysis = lesson.analysis?.(store.params(lesson.id))
+    poleReadout.update(analysis)
+    if (analysis && !poleReadout.canvas.hidden) drawSplane(poleCtx, analysis, theme, fitCanvas(poleReadout.canvas))
+  }
 }
 
 let lastTime: number | undefined
@@ -304,7 +328,7 @@ function watchPixelRatio(): void {
   matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener(
     'change',
     () => {
-      requestDraw()
+      requestReadout()
       watchPixelRatio()
     },
     { once: true },
@@ -340,11 +364,12 @@ function start(): void {
   syncUi()
   watchTheme(() => {
     theme = loadTheme()
-    requestDraw()
+    requestReadout()
   })
   const resize = new ResizeObserver(requestDraw)
   resize.observe(canvas)
   resize.observe(recorderCanvas)
+  new ResizeObserver(requestReadout).observe(poleReadout.canvas)
   watchPixelRatio()
   // A hidden tab or a rotation releases the stick and pauses a running flight.
   watchAutoPause(window, releaseAndPause)
@@ -384,7 +409,7 @@ function start(): void {
   void Promise.all([
     document.fonts.load(`700 22px ${theme.fontCondensed}`),
     document.fonts.load(`500 18px ${theme.fontBody}`),
-  ]).then(requestDraw, () => {})
+  ]).then(requestReadout, () => {})
   requestAnimationFrame(frame)
   // The loop already runs, so a failed dev import only loses its switch.
   if (import.meta.env.DEV) loadDevSwitches().catch((error: unknown) => console.error(error))
