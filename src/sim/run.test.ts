@@ -892,9 +892,9 @@ describe('Run altimeter noise and Kalman filter', () => {
     const run = createRun({ course: 101, mode: 'autopilot', player: { algorithm: rec.algorithm, params: defaultParams(pid) }, conditions })
     return { run, seen: rec.seen }
   }
-  /** The player's unit samples at each control tick: draws 1, 5, 9 … of its sensor stream. */
-  function tickSamples(ticks: number): number[] {
-    const rng = stream(101, 'sensor:player')
+  /** The plane's unit samples at each control tick: draws 1, 5, 9 … of its sensor stream. */
+  function tickSamples(ticks: number, plane: PlaneId = 'player'): number[] {
+    const rng = stream(101, `sensor:${plane}`)
     const out: number[] = []
     for (let step = 0; out.length < ticks; step++) {
       const sample = gauss(rng)
@@ -936,7 +936,7 @@ describe('Run altimeter noise and Kalman filter', () => {
     const [, , h, hMeas, hEst, u] = traceColumns(run.snapshot())
     let kf: KalmanState | null = null
     hMeas.forEach((y, i) => {
-      kf = stepKalman(kf ?? createKalman(y), y, i === 0 ? 0 : u[i - 1]!, 10, 4)
+      kf = stepKalman(kf ?? createKalman(y), y, i === 0 ? 0 : u[i - 1]!, CALM.kq, CALM.kr)
       expect(seen[i]!.h).toBe(kf.h)
       expect(seen[i]!.v).toBe(kf.v)
       expect(hEst[i]).toBe(kf.h)
@@ -955,7 +955,7 @@ describe('Run altimeter noise and Kalman filter', () => {
     run.step(1)
     const [, , , hMeas, hEst, u] = traceColumns(run.snapshot())
     expect(hMeas.length).toBe(N + 1)
-    const expected = stepKalman(createKalman(hMeas[N]!), hMeas[N]!, u[N - 1]!, 10, 4)
+    const expected = stepKalman(createKalman(hMeas[N]!), hMeas[N]!, u[N - 1]!, CALM.kq, CALM.kr)
     expect(hEst[N]).toBe(expected.h)
     expect(seen[N]!.v).toBe(expected.v)
     expect(hEst.slice(0, N)).toEqual(hMeas.slice(0, N))
@@ -971,7 +971,7 @@ describe('Run altimeter noise and Kalman filter', () => {
     const [, , , hMeas, hEst, u] = traceColumns(run.snapshot())
     const i = hMeas.length - 1
     expect(hEst.slice(20, 25)).toEqual(hMeas.slice(20, 25))
-    expect(hEst[i]).toBe(stepKalman(createKalman(hMeas[i]!), hMeas[i]!, u[i - 1]!, 10, 4).h)
+    expect(hEst[i]).toBe(stepKalman(createKalman(hMeas[i]!), hMeas[i]!, u[i - 1]!, CALM.kq, CALM.kr).h)
   })
 
   it('leaves the player unchanged by a wingman under noise, with or without the filter', () => {
@@ -1000,6 +1000,50 @@ describe('Run altimeter noise and Kalman filter', () => {
     const samples = tickSamples(i + 1)
     expect(lateTr[3]![i]! - lateTr[2]![i]!).toBeCloseTo(2 * samples[i]!, 9)
     expect(startTr[3]![i]! - startTr[2]![i]!).toBeCloseTo(2 * samples[i]!, 9)
+  })
+
+  /** The Kalman estimate a filter on from the first row computes from the trace's readings and commands. */
+  function replayKalman(hMeas: number[], u: number[], kq: number, kr: number, from = 0): number[] {
+    let kf: KalmanState | null = null
+    const out: number[] = []
+    for (let i = from; i < hMeas.length; i++) {
+      kf = stepKalman(kf ?? createKalman(hMeas[i]!), hMeas[i]!, i === 0 ? 0 : u[i - 1]!, kq, kr)
+      out.push(kf.h)
+    }
+    return out
+  }
+
+  it('flies the filter with the Q and R given in the options', () => {
+    const run = pidOn({ noise: 2, kalman: 1, kq: 250, kr: 0.5 })
+    flyToEnd(run)
+    const [, , , hMeas, hEst, u] = traceColumns(run.snapshot())
+    expect(hEst).toEqual(replayKalman(hMeas, u, 250, 0.5))
+    expect(hEst).not.toEqual(replayKalman(hMeas, u, CALM.kq, CALM.kr))
+  })
+
+  it('flies a new R from the next control tick when it changes mid-flight', () => {
+    const run = pidOn({ noise: 2, kalman: 1 })
+    const N = 40
+    run.step(CONTROL_EVERY * N)
+    run.setEnv('kr', 50)
+    run.step(CONTROL_EVERY * 10)
+    const [, , , hMeas, hEst, u] = traceColumns(run.snapshot())
+    expect(hEst.slice(0, N)).toEqual(replayKalman(hMeas.slice(0, N), u, CALM.kq, CALM.kr))
+    let kf: KalmanState | null = null
+    hMeas.forEach((y, i) => {
+      kf = stepKalman(kf ?? createKalman(y), y, i === 0 ? 0 : u[i - 1]!, CALM.kq, i < N ? CALM.kr : 50)
+      expect(hEst[i]).toBe(kf.h)
+    })
+  })
+
+  it('reads the wingman through its own sensor stream, not the player\'s', () => {
+    const run = pidOn({ noise: 2 }, true)
+    run.step(CONTROL_EVERY * 100)
+    const [, , h, hMeas] = traceColumns(run.snapshot(), 'wingman')
+    const own = tickSamples(hMeas.length, 'wingman')
+    const player = tickSamples(hMeas.length, 'player')
+    hMeas.forEach((y, i) => expect(y - h[i]!).toBeCloseTo(2 * own[i]!, 9))
+    expect(own).not.toEqual(player)
   })
 
   it('records per row the noise each reading had and whether the filter ran', () => {
