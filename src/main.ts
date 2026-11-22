@@ -20,6 +20,7 @@ import { createRunLogger } from './ui/logbook.ts'
 import { createModeSwitch } from './ui/mode-switch.ts'
 import { createPoleReadout, lessonAnalysis } from './ui/pole-readout.ts'
 import { browserStorage, validCourse } from './ui/persistence.ts'
+import { createRedraw } from './ui/redraw.ts'
 import { createRouter, drawCourse, followAddress, parseRoute } from './ui/router.ts'
 import { createScoreMirror } from './ui/score-mirror.ts'
 import { createSetpointSlider } from './ui/setpoint-slider.ts'
@@ -81,6 +82,10 @@ const route = parseRoute(router.read(), algorithms)
 if (route.lesson !== undefined) store.setLesson(route.lesson)
 if (route.course !== undefined) store.setCourse(route.course)
 router.write(store.lesson, store.course)
+/** What the next frame redraws; the Pole readout only when asked through `requestReadout`. */
+const redraw = createRedraw()
+const requestDraw = redraw.request
+const requestReadout = redraw.requestReadout
 /** The selected lesson. */
 let lesson: AlgorithmModule = findAlgorithm(store.lesson) ?? algorithms[0]!
 /** The player's autopilot; each Fly starts a run with the current one. */
@@ -286,19 +291,6 @@ main.append(mirror.element)
 let theme = loadTheme()
 /** A dev-only fixture shown instead of the run while the flight is ready. */
 let fixture: Snapshot | undefined
-let needsDraw = true
-/** The Pole readout needs its text and plot rebuilt on the next draw. */
-let readoutDirty = true
-
-function requestDraw(): void {
-  needsDraw = true
-}
-
-/** Rebuilds the Pole readout on the next frame: after a parameter, lesson, theme or size change. */
-function requestReadout(): void {
-  readoutDirty = true
-  needsDraw = true
-}
 
 /** Drops the dev fixture, so the scene shows the run again. */
 function clearFixture(): void {
@@ -353,8 +345,7 @@ function draw(): void {
   drawScene(ctx, snapshot, theme, fitCanvas(canvas))
   drawRecorder(recorderCtx, snapshot, theme, fitCanvas(recorderCanvas))
   mirror.update(snapshot)
-  if (readoutDirty) {
-    readoutDirty = false
+  if (redraw.takeReadout()) {
     // The selected lesson and its own params, not the flying algorithm's, so a dev controller never hides the readout.
     const analysis = lessonAnalysis(lesson, store.params(lesson.id))
     poleReadout.update(analysis)
@@ -369,10 +360,7 @@ function frame(time: number): void {
   lastTime = time
   const stepped = flight.advance(elapsed) > 0
   syncUi()
-  if (stepped || needsDraw) {
-    needsDraw = false
-    draw()
-  }
+  if (redraw.takeDraw(stepped)) draw()
   requestAnimationFrame(frame)
 }
 
