@@ -1,14 +1,16 @@
 import './styles/tokens.css'
 import './styles/layout.css'
-import { defaultParams, findAlgorithm } from './algorithms/index.ts'
+import { algorithms, defaultParams, findAlgorithm, type AlgorithmModule } from './algorithms/index.ts'
 import { draw as drawRecorder } from './render/recorder.ts'
 import { draw as drawScene } from './render/scene.ts'
 import { createRun, type Run, type RunPlayer } from './sim/run.ts'
-import type { Snapshot } from './sim/types.ts'
+import type { FlightMode, Snapshot } from './sim/types.ts'
 import { createAutopilotCard } from './ui/autopilot-card.ts'
 import { bannerContent, createBanner } from './ui/banner.ts'
 import { createFlight, inFlight, type Phase } from './ui/flight.ts'
+import { createStick, gameKey, typingTarget } from './ui/input.ts'
 import { createScoreMirror } from './ui/score-mirror.ts'
+import { createStickButtons } from './ui/stick-buttons.ts'
 import { loadTheme, watchTheme } from './ui/theme.ts'
 import { createToolbar } from './ui/toolbar.ts'
 
@@ -51,15 +53,39 @@ recorderBody.className = 'card-body'
 recorderBody.append(recorderCanvas)
 recorderCard.append(recorderTitle, recorderBody)
 
-const pid = findAlgorithm('pid')!
+/** Each lesson's current params this session, starting from its defaults. */
+const paramsById = new Map(algorithms.map((m) => [m.id, defaultParams(m)]))
+/** The selected lesson. */
+let lesson: AlgorithmModule = findAlgorithm('pid') ?? algorithms[0]!
 /** The player's autopilot; each Fly starts a run with the current one. */
-let player: RunPlayer = { algorithm: pid, params: defaultParams(pid) }
-const flight = createFlight(() => createRun({ course: 101, mode: 'autopilot', player }))
+let player: RunPlayer = { algorithm: lesson, params: paramsById.get(lesson.id)! }
 
-const autopilotCard = createAutopilotCard(document, pid, player.params, {
+/** A lesson whose modes include Manual flies by hand with the stick; any other flies on autopilot. */
+const flysByHand = (m: AlgorithmModule) => m.modes.includes('manual')
+const runMode = (): FlightMode => (flysByHand(lesson) ? 'manual' : 'autopilot')
+
+const flight = createFlight(() => createRun({ course: 101, mode: runMode(), player }))
+
+/** The one source of the player's stick; buttons and keys only press and release it. */
+const stick = createStick((value) => {
+  if (inFlight(flight.phase)) flight.run.setInput(value)
+})
+const stickButtons = createStickButtons(document, stick)
+stage.append(stickButtons.element)
+stickButtons.setVisible(flysByHand(lesson))
+
+/** Starts a run and hands it the stick as it is now, so a button held across Fly counts from the first step. */
+function fly(): void {
+  flight.fly()
+  flight.run.setInput(stick.value)
+}
+
+const autopilotCard = createAutopilotCard(document, algorithms, lesson.id, player.params, {
   change(key, value) {
     // A new record each time, so a finished run's params are never touched.
-    player = { ...player, params: { ...player.params, [key]: value } }
+    const params = { ...(paramsById.get(lesson.id) ?? defaultParams(lesson)), [key]: value }
+    paramsById.set(lesson.id, params)
+    player = { ...player, params }
     if (inFlight(flight.phase)) flight.run.setParam('player', key, value)
   },
   commit(label) {
@@ -68,12 +94,21 @@ const autopilotCard = createAutopilotCard(document, pid, player.params, {
       requestDraw()
     }
   },
+  select(id) {
+    const next = findAlgorithm(id)
+    if (!next || inFlight(flight.phase) || next.id === lesson.id) return
+    lesson = next
+    player = { algorithm: next, params: paramsById.get(next.id) ?? defaultParams(next) }
+    autopilotCard.setLesson(next, player.params)
+    stickButtons.setVisible(flysByHand(next))
+    stick.releaseAll()
+  },
 })
 side.append(autopilotCard.element)
 
 const toolbar = createToolbar(document, {
   fly() {
-    flight.fly()
+    fly()
     delete canvas.dataset.fixture
     fixture = undefined
     syncUi()
@@ -108,6 +143,7 @@ let bannerRun: Run | undefined
 /** Reflects the flight into the toolbar and the banner; cheap, so it runs every frame. */
 function syncUi(): void {
   toolbar.update(flight.phase, flight.speed)
+  autopilotCard.setPhase(flight.phase)
   // The banner depends only on the phase and the run's result, so recompute it when either changes.
   if (flight.phase !== bannerPhase || flight.run !== bannerRun) {
     bannerPhase = flight.phase
@@ -134,6 +170,11 @@ function draw(): void {
   drawScene(ctx, snapshot, theme, fitCanvas(canvas))
   drawRecorder(recorderCtx, snapshot, theme, fitCanvas(recorderCanvas))
   mirror.update(snapshot)
+}
+
+/** True when the stick buttons are shown, so the game keys fly the plane. */
+function stickVisible(): boolean {
+  return flysByHand(lesson)
 }
 
 let lastTime: number | undefined
@@ -180,7 +221,7 @@ async function loadDevSwitches(): Promise<void> {
     player = { algorithm: DIVE, params: {} }
     // A flight started during the import flew the default; start it again with the dive.
     if (flight.phase !== 'ready') {
-      flight.fly()
+      fly()
       syncUi()
       requestDraw()
     }
@@ -198,11 +239,22 @@ function start(): void {
   resize.observe(recorderCanvas)
   watchPixelRatio()
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && flight.phase === 'running') {
+    if (!document.hidden) return
+    stick.releaseAll()
+    if (flight.phase === 'running') {
       flight.togglePause()
       syncUi()
     }
   })
+  window.addEventListener('blur', () => stick.releaseAll())
+  window.addEventListener('keydown', (event) => {
+    const direction = gameKey(event)
+    if (!direction || !stickVisible() || typingTarget(document.activeElement as HTMLElement | null)) return
+    event.preventDefault()
+    if (!event.repeat) stick.press(direction, `key:${event.key.toLowerCase()}`)
+  })
+  // A key-up always releases its source, whatever the focus or modifiers are by then.
+  window.addEventListener('keyup', (event) => stick.release(`key:${event.key.toLowerCase()}`))
   // Canvas text does not wait for web fonts, so redraw once the HUD and badge fonts are loaded.
   void Promise.all([
     document.fonts.load(`700 22px ${theme.fontCondensed}`),

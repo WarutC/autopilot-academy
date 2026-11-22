@@ -1,8 +1,10 @@
-// The Autopilot card: the module's name, its lesson, one row per parameter and
-// a reset button. Built from the module's `ParamSpec` list only, so every
-// algorithm gets the same panel.
+// The Autopilot card: the lesson chips, then the selected module's name, its
+// lesson, one row per parameter and a reset button. Built from the registry
+// and each module's `ParamSpec` list only, so every algorithm gets the same
+// panel.
 
 import type { AlgorithmModule, ParamSpec, Params } from '../algorithms/index.ts'
+import { inFlight, type Phase } from './flight.ts'
 import { changeLabel, clampValue, formatValue, fromSlider, parseNumber, resetChanges, sliderRange, toSlider } from './params.ts'
 
 export interface AutopilotCardHandlers {
@@ -10,12 +12,18 @@ export interface AutopilotCardHandlers {
   change(key: string, value: number): void
   /** A change is finished, labeled like "Kd 0 → 0.05"; several changes are joined with ", ". */
   commit(label: string): void
+  /** A lesson chip was picked; the page decides whether to switch with `setLesson`. */
+  select(id: string): void
 }
 
 export interface AutopilotCard {
   readonly element: HTMLElement
   /** Shows `params`; fields whose value did not change are not rewritten. */
   update(params: Params): void
+  /** Shows `module`'s name, lesson and rows with `params`, and marks its chip selected. */
+  setLesson(module: AlgorithmModule, params: Params): void
+  /** In flight, every chip but the selected one is disabled. */
+  setPhase(phase: Phase): void
 }
 
 interface Row {
@@ -54,13 +62,11 @@ function lessonText(doc: Document, p: HTMLElement, lesson: string): void {
 
 export function createAutopilotCard(
   doc: Document,
-  module: AlgorithmModule,
+  lessons: readonly AlgorithmModule[],
+  selectedId: string,
   params: Params,
   handlers: AutopilotCardHandlers,
 ): AutopilotCard {
-  const values: Record<string, number> = {}
-  for (const spec of module.params) values[spec.key] = params[spec.key] ?? spec.default
-
   const element = doc.createElement('section')
   element.className = 'card autopilot-card'
   element.setAttribute('aria-labelledby', 'autopilot-card-title')
@@ -73,15 +79,57 @@ export function createAutopilotCard(
   const body = doc.createElement('div')
   body.className = 'card-body'
 
+  const chipGroup = doc.createElement('div')
+  chipGroup.className = 'lesson-chips'
+  chipGroup.setAttribute('role', 'group')
+  chipGroup.setAttribute('aria-label', 'Lessons')
+  const chips = lessons.map((m, i) => {
+    const b = doc.createElement('button')
+    b.type = 'button'
+    b.className = 'lesson-chip'
+    const lines = [
+      ['lesson-chip-number', `Lesson ${i + 1}`],
+      ['lesson-chip-name', m.name],
+      ['lesson-chip-tag', m.tag],
+    ].map(([className, text]) => {
+      const span = doc.createElement('span')
+      span.className = className
+      span.textContent = text
+      return span
+    })
+    b.append(...lines)
+    b.setAttribute('aria-label', `Lesson ${i + 1}, ${m.name}, ${m.tag}`)
+    b.addEventListener('click', () => {
+      // In flight only the selected chip is live, and picking it changes nothing.
+      if (inFlight(phase) && m.id !== module.id) return
+      handlers.select(m.id)
+    })
+    chipGroup.append(b)
+    return { id: m.id, b }
+  })
+
   const name = doc.createElement('h3')
   name.className = 'autopilot-name'
-  name.textContent = module.name
 
   const lesson = doc.createElement('p')
   lesson.className = 'lesson'
-  lessonText(doc, lesson, module.lesson)
 
-  body.append(name, lesson)
+  const list = doc.createElement('div')
+  list.className = 'param-list'
+
+  const reset = doc.createElement('button')
+  reset.type = 'button'
+  reset.className = 'btn btn-reset'
+  reset.textContent = 'Reset this autopilot to defaults'
+
+  body.append(chipGroup, name, lesson, list, reset)
+  element.append(header, body)
+
+  /** The shown module, its values and its rows. */
+  let module: AlgorithmModule = lessons.find((m) => m.id === selectedId) ?? lessons[0]!
+  let values: Record<string, number> = {}
+  let rows: Row[] = []
+  let phase: Phase = 'ready'
 
   /** Records `v` for `spec` and tells the handler; false when nothing changed. */
   function apply(spec: ParamSpec, v: number): boolean {
@@ -194,21 +242,6 @@ export function createAutopilotCard(
     }
   }
 
-  const rows: Row[] = module.params.map((spec) => {
-    const id = `param-${module.id}-${spec.key}`
-    const row = spec.toggle ? toggleRow(spec, id) : sliderRow(spec, id)
-    row.show(values[spec.key])
-    return row
-  })
-
-  const list = doc.createElement('div')
-  list.className = 'param-list'
-  list.append(...rows.map((r) => r.element))
-
-  const reset = doc.createElement('button')
-  reset.type = 'button'
-  reset.className = 'btn btn-reset'
-  reset.textContent = 'Reset this autopilot to defaults'
   reset.addEventListener('click', () => {
     const changes = resetChanges(module.params, values)
     if (changes.length === 0) return
@@ -220,8 +253,43 @@ export function createAutopilotCard(
     handlers.commit(changes.map((c) => c.label).join(', '))
   })
 
-  body.append(list, reset)
-  element.append(header, body)
+  function showLesson(next: AlgorithmModule, nextParams: Params): void {
+    module = next
+    values = {}
+    for (const spec of next.params) values[spec.key] = nextParams[spec.key] ?? spec.default
+    name.textContent = next.name
+    lesson.replaceChildren()
+    lessonText(doc, lesson, next.lesson)
+    rows = next.params.map((spec) => {
+      const id = `param-${next.id}-${spec.key}`
+      const row = spec.toggle ? toggleRow(spec, id) : sliderRow(spec, id)
+      row.show(values[spec.key])
+      return row
+    })
+    list.replaceChildren(...rows.map((r) => r.element))
+    const empty = rows.length === 0
+    list.hidden = empty
+    reset.hidden = empty
+    for (const { id, b } of chips) {
+      const pressed = String(id === next.id)
+      if (b.getAttribute('aria-pressed') !== pressed) b.setAttribute('aria-pressed', pressed)
+    }
+    syncChips()
+  }
+
+  function syncChips(): void {
+    const flying = inFlight(phase)
+    const selected = chips.find((c) => c.id === module.id)?.b
+    for (const { id, b } of chips) {
+      const disabled = flying && id !== module.id
+      if (b.disabled === disabled) continue
+      // A disabled button loses focus to the page, so hand it to the selected chip first.
+      if (disabled && doc.activeElement === b) selected?.focus()
+      b.disabled = disabled
+    }
+  }
+
+  showLesson(module, params)
 
   return {
     element,
@@ -232,6 +300,11 @@ export function createAutopilotCard(
         values[row.spec.key] = v
         row.show(v)
       }
+    },
+    setLesson: showLesson,
+    setPhase(next) {
+      phase = next
+      syncChips()
     },
   }
 }

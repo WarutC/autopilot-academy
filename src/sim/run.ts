@@ -22,6 +22,7 @@ import type {
   PlaneStatus,
   RingResult,
   Snapshot,
+  StickInput,
   Trace,
 } from './types.ts'
 
@@ -61,6 +62,12 @@ export interface Run extends ScoredRun {
   setParam(plane: PlaneId, key: string, value: number): void
   /** Drops a recorder marker labeled `label` at the current time; an empty label is ignored. */
   markChange(label: string): void
+  /**
+   * Sets the player's stick; the next control tick passes it as `ctx.input`
+   * in Manual mode, and 0 in any other mode. It never counts as a retune and
+   * drops no marker. A value other than -1, 0 or 1 is ignored.
+   */
+  setInput(stick: StickInput): void
 }
 
 /** One plane: its plant, controller, estimator state, scoring and trace. */
@@ -73,6 +80,8 @@ interface Plane {
   readonly controller: Controller
   /** A parameter changed during the flight. */
   retuned: boolean
+  /** The player's stick, read in Manual mode only. */
+  stick: StickInput
   status: PlaneStatus
   plant: PlantState
   u: number
@@ -102,6 +111,7 @@ export function createRun(options: RunOptions): Run {
     params,
     controller: options.player.algorithm.create(params),
     retuned: false,
+    stick: 0,
     status: 'flying',
     plant: initialPlant(),
     u: 0,
@@ -137,7 +147,7 @@ export function createRun(options: RunOptions): Run {
       ref,
       h: p.hEst,
       v: p.vEst,
-      input: 0 as const,
+      input: p.mode === 'manual' ? p.stick : 0,
       refAhead: (ahead: number) => refAt(course, x + speed * ahead),
     })
     const raw: unknown = p.controller.compute(ctx)
@@ -249,6 +259,10 @@ export function createRun(options: RunOptions): Run {
     markChange(label) {
       if (typeof label !== 'string' || label === '') return
       markers.push({ t: k * dt, label })
+    },
+    setInput(stick) {
+      if (stick !== -1 && stick !== 0 && stick !== 1) return
+      player.stick = stick === 0 ? 0 : stick // never -0
     },
     result(plane: PlaneId): PlaneResult | undefined {
       const p = find(plane)

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { defaultParams } from '../algorithms/index.ts'
+import { algorithms, defaultParams } from '../algorithms/index.ts'
+import manual from '../algorithms/manual.ts'
 import pid from '../algorithms/pid.ts'
 import { createAutopilotCard, type AutopilotCardHandlers } from './autopilot-card.ts'
 
@@ -15,8 +16,10 @@ class FakeElement {
   max = ''
   step = ''
   checked = false
+  disabled = false
+  hidden = false
   readonly attrs = new Map<string, string>()
-  readonly children: Array<FakeElement | string> = []
+  children: Array<FakeElement | string> = []
   readonly listeners = new Map<string, Array<() => void>>()
   private text = ''
   private val = ''
@@ -53,6 +56,12 @@ class FakeElement {
   append(...nodes: Array<FakeElement | string>): void {
     this.children.push(...nodes)
   }
+  replaceChildren(...nodes: Array<FakeElement | string>): void {
+    this.children = [...nodes]
+  }
+  focus(): void {
+    this.doc.activeElement = this
+  }
   fire(type: string): void {
     for (const l of this.listeners.get(type) ?? []) l()
   }
@@ -64,6 +73,7 @@ class FakeElement {
 
 class FakeDoc {
   writes = 0
+  activeElement: FakeElement | null = null
   createElement(tag: string): FakeElement {
     return new FakeElement(tag, this)
   }
@@ -75,11 +85,14 @@ function setup(params = defaultParams(pid)) {
   const handlers: AutopilotCardHandlers = {
     change: vi.fn((key: string, value: number) => void calls.push(`change ${key} ${value}`)),
     commit: vi.fn((label: string) => void calls.push(`commit ${label}`)),
+    select: vi.fn((id: string) => void calls.push(`select ${id}`)),
   }
-  const card = createAutopilotCard(doc as unknown as Document, pid, params, handlers)
+  const card = createAutopilotCard(doc as unknown as Document, algorithms, 'pid', params, handlers)
   const root = card.element as unknown as FakeElement
   const els = root.all()
   const byClass = (c: string) => els.filter((e) => e.className.split(' ').includes(c))
+  /** Like `byClass`, but reads the card as it is now. */
+  const live = (c: string) => root.all().filter((e) => e.className.split(' ').includes(c))
   const row = (key: string) => {
     const index = pid.params.findIndex((p) => p.key === key)
     const r = byClass('param-row')[index]!
@@ -87,7 +100,7 @@ function setup(params = defaultParams(pid)) {
     const find = (c: string) => inner.find((e) => e.className === c)
     return { field: find('param-number'), slider: find('param-slider'), check: find('param-check'), label: find('param-label')! }
   }
-  return { doc, calls, handlers, card, root, els, byClass, row }
+  return { doc, calls, handlers, card, root, els, byClass, live, row }
 }
 
 describe('createAutopilotCard', () => {
@@ -209,5 +222,81 @@ describe('createAutopilotCard', () => {
     expect(row('Kd').slider!.value).toBe('0.1')
     expect(row('aw').check!.checked).toBe(false)
     expect(handlers.change).not.toHaveBeenCalled()
+  })
+
+  it('lists one chip per registry entry, in order, with the selected one pressed', () => {
+    const { byClass, els } = setup()
+    const group = els.find((e) => e.className === 'lesson-chips')!
+    expect(group.getAttribute('role')).toBe('group')
+    expect(group.getAttribute('aria-label')).toBe('Lessons')
+    const chips = byClass('lesson-chip')
+    expect(chips).toHaveLength(algorithms.length)
+    expect(chips.map((c) => c.type)).toEqual(algorithms.map(() => 'button'))
+    algorithms.forEach((m, i) => {
+      const lines = chips[i]!.children.map((c) => (typeof c === 'string' ? c : c.textContent))
+      expect(lines).toEqual([`Lesson ${i + 1}`, m.name, m.tag])
+      expect(chips[i]!.getAttribute('aria-pressed')).toBe(String(m.id === 'pid'))
+    })
+    expect(chips.slice(0, 2).map((c) => c.children[1])).toMatchObject([{ textContent: 'Manual' }, { textContent: 'PID' }])
+  })
+
+  it('calls select when a chip is clicked', () => {
+    const { calls, byClass } = setup()
+    byClass('lesson-chip')[0]!.fire('click')
+    expect(calls).toEqual(['select manual'])
+  })
+
+  it('ignores a click on another chip in flight', () => {
+    const { calls, card, byClass } = setup()
+    card.setPhase('running')
+    byClass('lesson-chip')[0]!.fire('click')
+    expect(calls).toEqual([])
+    card.setPhase('ended')
+    byClass('lesson-chip')[0]!.fire('click')
+    expect(calls).toEqual(['select manual'])
+  })
+
+  it('disables every chip but the selected one in flight, moving focus off a disabled chip', () => {
+    const { doc, card, byClass } = setup()
+    const chips = byClass('lesson-chip')
+    const pidChip = chips[algorithms.findIndex((m) => m.id === 'pid')]!
+    chips[0]!.focus()
+    for (const phase of ['running', 'paused'] as const) {
+      card.setPhase(phase)
+      expect(chips.map((c) => c.disabled)).toEqual(algorithms.map((m) => m.id !== 'pid'))
+    }
+    expect(doc.activeElement).toBe(pidChip)
+    card.setPhase('ended')
+    expect(chips.every((c) => !c.disabled)).toBe(true)
+    card.setPhase('ready')
+    expect(chips.every((c) => !c.disabled)).toBe(true)
+  })
+
+  it('switches to a lesson with no params, then back to PID with the given values', () => {
+    const { card, live } = setup()
+    card.setLesson(manual, {})
+    expect(live('autopilot-name')[0]!.textContent).toBe('Manual')
+    expect(live('lesson')[0]!.textContent).toBe(manual.lesson)
+    expect(live('param-row')).toHaveLength(0)
+    expect(live('btn-reset')[0]!.hidden).toBe(true)
+    expect(live('lesson-chip').map((c) => c.getAttribute('aria-pressed'))).toEqual(
+      algorithms.map((m) => String(m.id === 'manual')),
+    )
+
+    card.setLesson(pid, { ...defaultParams(pid), Kd: 0.1 })
+    expect(live('autopilot-name')[0]!.textContent).toBe('PID')
+    expect(live('lesson')[0]!.textContent).toBe(pid.lesson)
+    const rows = live('param-row')
+    expect(rows).toHaveLength(5)
+    expect(live('btn-reset')[0]!.hidden).toBe(false)
+    const kd = rows[pid.params.findIndex((p) => p.key === 'Kd')]!.all().find((e) => e.className === 'param-number')!
+    expect(kd.value).toBe('0.1')
+  })
+
+  it('keeps the selected chip enabled after switching lessons in flight', () => {
+    const { card, live } = setup()
+    card.setLesson(manual, {})
+    card.setPhase('running')
+    expect(live('lesson-chip').map((c) => c.disabled)).toEqual(algorithms.map((m) => m.id !== 'manual'))
   })
 })

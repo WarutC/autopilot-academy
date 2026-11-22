@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { defaultParams } from '../algorithms/index.ts'
+import manual from '../algorithms/manual.ts'
 import pid from '../algorithms/pid.ts'
 import { makeCourse } from './course.ts'
 import { PLANT } from './plant.ts'
@@ -359,5 +360,62 @@ describe('Run markChange', () => {
     expect(run.snapshot().markers).toEqual([])
     run.markChange('Kd 0 → 0.05')
     expect(run.snapshot().planes[0].retuned).toBe(false)
+  })
+})
+
+const manualWith = (algorithm: RunAlgorithm) =>
+  createRun({ course: 101, mode: 'manual', player: { algorithm, params: {} } })
+
+describe('Run setInput', () => {
+  it('passes the stick as ctx.input on the next control tick in Manual mode', () => {
+    const inputs: number[] = []
+    const run = manualWith(fixed((ctx) => (inputs.push(ctx.input), 0)))
+    run.step(4)
+    run.setInput(1)
+    run.step(4)
+    run.setInput(-1)
+    run.step(4)
+    run.setInput(0)
+    run.step(4)
+    expect(inputs).toEqual([0, 1, -1, 0])
+    const s = run.snapshot()
+    expect(s.planes[0].retuned).toBe(false)
+    expect(s.markers).toEqual([])
+    expect(run.result('player')!.retuned).toBe(false)
+  })
+
+  it('uses a stick set before the first step on the first control tick', () => {
+    const inputs: number[] = []
+    const run = manualWith(fixed((ctx) => (inputs.push(ctx.input), 0)))
+    run.setInput(1)
+    run.step(1)
+    expect(inputs).toEqual([1])
+  })
+
+  it('keeps ctx.input at 0 outside Manual mode', () => {
+    const inputs: number[] = []
+    const run = runWith(fixed((ctx) => (inputs.push(ctx.input), 0)))
+    run.setInput(1)
+    run.step(8)
+    expect(inputs).toEqual([0, 0])
+  })
+
+  it('ignores values other than -1, 0 and 1, without throwing', () => {
+    const inputs: number[] = []
+    const run = manualWith(fixed((ctx) => (inputs.push(ctx.input), 0)))
+    run.setInput(1)
+    expect(() => {
+      for (const bad of [0.5, NaN, 2, Infinity]) run.setInput(bad as never)
+    }).not.toThrow()
+    run.step(1)
+    expect(inputs).toEqual([1])
+  })
+
+  it('climbs above hStart within 1 s with the Manual lesson holding ▲', () => {
+    const run = createRun({ course: 101, mode: 'manual', player: { algorithm: manual, params: {} } })
+    run.setInput(1)
+    run.step(Math.round(1 / PLANT.dt))
+    expect(run.snapshot().planes[0].h).toBeGreaterThan(PLANT.hStart)
+    expect(run.status()).toBe('flying')
   })
 })
