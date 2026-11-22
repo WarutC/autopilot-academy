@@ -18,8 +18,6 @@ export interface AutopilotCardHandlers {
 
 export interface AutopilotCard {
   readonly element: HTMLElement
-  /** Shows `params`; fields whose value did not change are not rewritten. */
-  update(params: Params): void
   /** Shows `module`'s name, lesson and rows with `params`, and marks its chip selected. */
   setLesson(module: AlgorithmModule, params: Params): void
   /** In flight, every chip but the selected one is disabled. */
@@ -293,14 +291,6 @@ export function createAutopilotCard(
 
   return {
     element,
-    update(next) {
-      for (const row of rows) {
-        const v = next[row.spec.key]
-        if (v === undefined || v === values[row.spec.key]) continue
-        values[row.spec.key] = v
-        row.show(v)
-      }
-    },
     setLesson: showLesson,
     setPhase(next) {
       phase = next

@@ -33,18 +33,15 @@ class FakeElement {
     return this.val
   }
   set value(v: string) {
-    this.doc.writes++
     this.val = v
   }
   get textContent(): string {
     return this.text + this.children.map((c) => (typeof c === 'string' ? c : c.textContent)).join('')
   }
   set textContent(value: string) {
-    this.doc.writes++
     this.text = value
   }
   setAttribute(name: string, value: string): void {
-    this.doc.writes++
     this.attrs.set(name, value)
   }
   getAttribute(name: string): string | null {
@@ -72,7 +69,6 @@ class FakeElement {
 }
 
 class FakeDoc {
-  writes = 0
   activeElement: FakeElement | null = null
   createElement(tag: string): FakeElement {
     return new FakeElement(tag, this)
@@ -210,18 +206,6 @@ describe('createAutopilotCard', () => {
     els.find((e) => e.className.includes('btn-reset'))!.fire('click')
     expect(handlers.change).not.toHaveBeenCalled()
     expect(handlers.commit).not.toHaveBeenCalled()
-  })
-
-  it('syncs fields on update without rewriting unchanged ones or calling handlers', () => {
-    const { doc, card, handlers, row } = setup()
-    const writes = doc.writes
-    card.update(defaultParams(pid))
-    expect(doc.writes).toBe(writes)
-    card.update({ ...defaultParams(pid), Kd: 0.1, aw: 0 })
-    expect(row('Kd').field!.value).toBe('0.1')
-    expect(row('Kd').slider!.value).toBe('0.1')
-    expect(row('aw').check!.checked).toBe(false)
-    expect(handlers.change).not.toHaveBeenCalled()
   })
 
   it('lists one chip per registry entry, in order, with the selected one pressed', () => {

@@ -1,9 +1,9 @@
 // Everything the flight scene draws, worked out from a snapshot and the canvas
 // size in CSS pixels. Pure: the renderer only strokes and fills what this returns.
 
-import { END_PAST_LAST_RING, refAt, ringBounds, type Course } from '../sim/course.ts'
+import { courseFromRings, refAt } from '../sim/course.ts'
 import { PLANT } from '../sim/plant.ts'
-import type { PlaneSnapshot, Ring, Snapshot } from '../sim/types.ts'
+import type { PlaneSnapshot, Snapshot } from '../sim/types.ts'
 
 /** Canvas size in CSS pixels, and the device pixels per CSS pixel. */
 export interface SceneSize {
@@ -99,12 +99,6 @@ function playerOf(snapshot: Snapshot): PlaneSnapshot | undefined {
   return snapshot.planes.find((p) => p.id === 'player')
 }
 
-function courseOf(snapshot: Snapshot): Course {
-  const rings: readonly Ring[] = snapshot.rings
-  const endX = rings.length > 0 ? rings[rings.length - 1].x + END_PAST_LAST_RING : 0
-  return { number: snapshot.course, rings, bounds: ringBounds(rings), endX }
-}
-
 /** Altitude the scene height spans, m. */
 const VIEW_ALTITUDE = 110
 
@@ -145,7 +139,7 @@ export function sceneGeometry(snapshot: Snapshot, size: SceneSize): SceneGeometr
   const { sx, ky, camX } = cam
   const X = (x: number): number => (x - camX) * sx
   const Y = (h: number): number => altitudeY(H, h)
-  const course = courseOf(snapshot)
+  const course = courseFromRings(snapshot.course, snapshot.rings)
 
   const planeX = X(px)
   const length = Math.max(46, H * 0.13)

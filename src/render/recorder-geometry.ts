@@ -3,9 +3,9 @@
 // the altitude flown, ring bars and parameter markers, and a lower band for
 // the elevator command. Pure: the renderer only strokes and fills what this returns.
 
-import { END_PAST_LAST_RING, refAt, ringBounds, type Course } from '../sim/course.ts'
+import { courseFromRings, refAt } from '../sim/course.ts'
 import { PLANT } from '../sim/plant.ts'
-import type { Ring, Snapshot } from '../sim/types.ts'
+import type { Snapshot } from '../sim/types.ts'
 import type { Point, RingState, SceneSize } from './scene-geometry.ts'
 
 /** Stroke widths in CSS px. Plot lines hold the 3 px floor; the grid is a hairline. */
@@ -123,12 +123,6 @@ const LEGEND_LABEL: Record<LegendKey, string> = {
   elevator: 'Elevator',
 }
 
-function courseOf(snapshot: Snapshot): Course {
-  const rings: readonly Ring[] = snapshot.rings
-  const endX = rings.length > 0 ? rings[rings.length - 1].x + END_PAST_LAST_RING : 0
-  return { number: snapshot.course, rings, bounds: ringBounds(rings), endX }
-}
-
 /** Estimated width of `text` at the 18 px font, CSS px; `measure` overrides it. */
 export function labelWidth(text: string, measure?: (text: string) => number): number {
   const w = measure?.(text)
@@ -180,7 +174,7 @@ export function recorderGeometry(
 ): RecorderGeometry {
   const W = size.width
   const H = size.height
-  const course = courseOf(snapshot)
+  const course = courseFromRings(snapshot.course, snapshot.rings)
   const tEnd = course.endX > 0 ? course.endX / PLANT.speed : 1
   const trace = snapshot.trace.player
   const n = trace?.length ?? 0

@@ -3,18 +3,13 @@
 // hash, rewrites it with replaceState and listens for hashchange.
 
 import type { AlgorithmModule } from '../algorithms/index.ts'
-import { DEFAULT_LESSON, validCourse } from './persistence.ts'
+import { firstLesson, MAX_COURSE, validCourse } from './persistence.ts'
 
 export interface Route {
   /** The lesson to select; undefined when the hash is not a lesson route. */
   readonly lesson?: string
   /** The course to load; undefined unless the route names a valid one. */
   readonly course?: number
-}
-
-/** The default lesson when registered, else the first registered one. */
-function fallbackLesson(modules: readonly AlgorithmModule[]): string {
-  return modules.some((m) => m.id === DEFAULT_LESSON) ? DEFAULT_LESSON : (modules[0]?.id ?? DEFAULT_LESSON)
 }
 
 /** Reads `#/lesson/<id>?course=<n>`; an unknown lesson falls back, an invalid course is left out. */
@@ -32,7 +27,7 @@ export function parseRoute(hash: string, modules: readonly AlgorithmModule[]): R
   } catch {
     id = ''
   }
-  const lesson = modules.some((m) => m.id === id) ? id : fallbackLesson(modules)
+  const lesson = modules.some((m) => m.id === id) ? id : firstLesson(modules)
 
   const raw = new URLSearchParams(query).get('course')
   const course = raw !== null && /^\d+$/.test(raw) ? Number(raw) : undefined
@@ -46,14 +41,14 @@ export function lessonHash(lesson: string, course: number): string {
 
 const DRAW_TRIES = 5
 
-/** A random course from 1 to 99999 that differs from `current`. */
+/** A random course from 1 to MAX_COURSE that differs from `current`. */
 export function drawCourse(random: () => number, current: number): number {
   for (let i = 0; i < DRAW_TRIES; i++) {
-    const course = 1 + Math.floor(random() * 99999)
+    const course = 1 + Math.floor(random() * MAX_COURSE)
     if (course !== current && validCourse(course)) return course
   }
   // A stuck or broken source still yields a different course.
-  return (current % 99999) + 1
+  return (current % MAX_COURSE) + 1
 }
 
 /** The parts of `window` the router uses. */

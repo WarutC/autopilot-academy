@@ -180,8 +180,7 @@ function loadCourse(course: number): void {
   store.setCourse(course)
   loadedCourse = course
   // The ready preview shows the new course's rings, not a dev fixture.
-  delete canvas.dataset.fixture
-  fixture = undefined
+  clearFixture()
   flight.reset()
   syncUi()
   requestDraw()
@@ -191,8 +190,7 @@ const toolbar = createToolbar(document, {
   fly() {
     flight.fly()
     loadedCourse = undefined
-    delete canvas.dataset.fixture
-    fixture = undefined
+    clearFixture()
     syncUi()
     requestDraw()
   },
@@ -212,21 +210,20 @@ const toolbar = createToolbar(document, {
 toolbar.element.prepend(modeSwitch.element)
 main.append(toolbar.element, recorderCard)
 
-/** Pauses a running flight, so the Paused banner shows; any other phase is left as it is. */
-function pauseRunning(): void {
-  if (flight.phase !== 'running') return
-  flight.togglePause()
-  syncUi()
+/** Releases the stick and pauses a running flight, so the Paused banner shows; any other phase is left as it is. */
+function releaseAndPause(): void {
+  stick.releaseAll()
+  if (flight.phase === 'running') {
+    flight.togglePause()
+    syncUi()
+  }
+  requestDraw()
 }
 
 // Phone landscape: the cards open as a drawer from the right, and opening it releases the stick and pauses the run.
 const drawer = createDrawer(document, {
   panel: side,
-  onOpen() {
-    stick.releaseAll()
-    pauseRunning()
-    requestDraw()
-  },
+  onOpen: releaseAndPause,
 })
 toolbar.element.querySelector('.seg:not(.mode-switch)')!.after(drawer.toggle)
 side.prepend(drawer.close)
@@ -248,6 +245,12 @@ let needsDraw = true
 
 function requestDraw(): void {
   needsDraw = true
+}
+
+/** Drops the dev fixture, so the scene shows the run again. */
+function clearFixture(): void {
+  delete canvas.dataset.fixture
+  fixture = undefined
 }
 
 let bannerPhase: Phase | undefined
@@ -285,11 +288,6 @@ function draw(): void {
   drawScene(ctx, snapshot, theme, fitCanvas(canvas))
   drawRecorder(recorderCtx, snapshot, theme, fitCanvas(recorderCanvas))
   mirror.update(snapshot)
-}
-
-/** True when the stick buttons are shown, so the game keys fly the plane. */
-function stickVisible(): boolean {
-  return flysByHand(lesson)
 }
 
 let lastTime: number | undefined
@@ -354,11 +352,7 @@ function start(): void {
   resize.observe(recorderCanvas)
   watchPixelRatio()
   // A hidden tab or a rotation releases the stick and pauses a running flight.
-  watchAutoPause(window, () => {
-    stick.releaseAll()
-    pauseRunning()
-    requestDraw()
-  })
+  watchAutoPause(window, releaseAndPause)
   const landscape = matchMedia(PHONE_LANDSCAPE)
   drawer.setActive(landscape.matches)
   landscape.addEventListener('change', (event) => drawer.setActive(event.matches))
@@ -377,7 +371,7 @@ function start(): void {
   })
   window.addEventListener('keydown', (event) => {
     const direction = gameKey(event)
-    if (!direction || !stickVisible() || typingTarget(document.activeElement as HTMLElement | null)) return
+    if (!direction || !flysByHand(lesson) || typingTarget(document.activeElement as HTMLElement | null)) return
     event.preventDefault()
     if (!event.repeat) stick.press(direction, `key:${event.key.toLowerCase()}`)
   })

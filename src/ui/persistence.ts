@@ -12,6 +12,8 @@ export const SETTINGS_VERSION = 1
 export const DEFAULT_COURSE = 101
 /** The lesson selected on a first visit, when it is registered. */
 export const DEFAULT_LESSON = 'pid'
+/** The highest course number. */
+export const MAX_COURSE = 99999
 
 export interface Settings {
   readonly lesson: string
@@ -32,13 +34,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function firstLesson(modules: readonly AlgorithmModule[]): string {
+/** The default lesson when registered, else the first registered one. */
+export function firstLesson(modules: readonly AlgorithmModule[]): string {
   return modules.some((m) => m.id === DEFAULT_LESSON) ? DEFAULT_LESSON : (modules[0]?.id ?? DEFAULT_LESSON)
 }
 
-/** A course number is an integer from 1 to 99999. */
+/** A course number is an integer from 1 to MAX_COURSE. */
 export function validCourse(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 99999
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= MAX_COURSE
 }
 
 export function defaultSettings(modules: readonly AlgorithmModule[]): Settings {

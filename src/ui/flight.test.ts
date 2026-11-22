@@ -5,7 +5,7 @@ import { PLANT } from '../sim/plant.ts'
 import { createRun } from '../sim/run.ts'
 import { summarize } from '../sim/scoring.ts'
 import { createPhase } from './store.ts'
-import { createFlight, flyLabel, inFlight, pauseEnabled, pauseLabel, type Flight, type Phase, type Speed } from './flight.ts'
+import { createFlight, flyLabel, inFlight, pauseLabel, type Flight, type Phase, type Speed } from './flight.ts'
 
 const pidRun = () =>
   createRun({ course: 101, mode: 'autopilot', player: { algorithm: pid, params: defaultParams(pid) } })
@@ -205,16 +205,15 @@ describe('createFlight', () => {
 })
 
 describe('labels', () => {
-  const cases: [Phase, string, string, boolean][] = [
-    ['ready', 'Fly', 'Pause', false],
-    ['running', 'Restart', 'Pause', true],
-    ['paused', 'Restart', 'Resume', true],
-    ['ended', 'Fly again', 'Pause', false],
+  const cases: [Phase, string, string][] = [
+    ['ready', 'Fly', 'Pause'],
+    ['running', 'Restart', 'Pause'],
+    ['paused', 'Restart', 'Resume'],
+    ['ended', 'Fly again', 'Pause'],
   ]
-  it.each(cases)('%s: %s, %s, enabled %s', (phase, fly, pause, enabled) => {
+  it.each(cases)('%s: %s, %s', (phase, fly, pause) => {
     expect(flyLabel(phase)).toBe(fly)
     expect(pauseLabel(phase)).toBe(pause)
-    expect(pauseEnabled(phase)).toBe(enabled)
   })
 })
 

@@ -2,7 +2,7 @@
 // simulation speed segmented control, the Course number field and New course,
 // built from native controls.
 
-import { SPEEDS, flyLabel, inFlight, pauseEnabled, pauseLabel, type Phase, type Speed } from './flight.ts'
+import { SPEEDS, flyLabel, inFlight, pauseLabel, type Phase, type Speed } from './flight.ts'
 import { validCourse } from './persistence.ts'
 
 export interface ToolbarHandlers {
@@ -93,7 +93,7 @@ export function createToolbar(doc: Document, handlers: ToolbarHandlers): Toolbar
     update(phase, speed, course) {
       setText(fly, flyLabel(phase))
       setText(pause, pauseLabel(phase))
-      const disabled = !pauseEnabled(phase)
+      const disabled = !inFlight(phase)
       if (pause.disabled !== disabled) {
         // A disabled button loses focus to the page, so hand it to Fly first.
         if (disabled && doc.activeElement === pause) fly.focus()
