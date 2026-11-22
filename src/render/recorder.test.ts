@@ -69,6 +69,24 @@ describe('recorderGeometry', () => {
     expect(g.target.length).toBeGreaterThan(100)
   })
 
+  it('draws the rest of a Semi-auto target flat at the player setpoint, after the flown part', () => {
+    const s = fixtureSnapshot()
+    const tr = s.trace.player!
+    const semi: Snapshot = { ...s, planes: s.planes.map((p) => ({ ...p, mode: 'semi-auto' as const, ref: 80 })) }
+    const g = recorderGeometry(semi, SIZE)
+    const flat = recorderGeometry({ ...semi, trace: {} }, SIZE).target[0]!.y
+    // The flown part keeps the trace reference.
+    for (let i = 0; i < tr.length; i++) expect(g.target[i]).toEqual(recorderGeometry(s, SIZE).target[i])
+    const rest = g.target.slice(tr.length)
+    expect(rest.length).toBeGreaterThan(10)
+    for (const p of rest) expect(p.y).toBe(flat)
+    const expectY = SIZE.height - PAD.bottom - ((80 - PLANT.hFloor) / (PLANT.hCeil - PLANT.hFloor)) * (SIZE.height - PAD.top - PAD.bottom)
+    expect(flat).toBeCloseTo(expectY, 9)
+    // Autopilot keeps the course reference beyond the flown part.
+    const auto = recorderGeometry(s, SIZE).target.slice(tr.length)
+    expect(new Set(auto.map((p) => p.y)).size).toBeGreaterThan(1)
+  })
+
   it('places a marker at its time with a full-height line', () => {
     const g = recorderGeometry(withMarkers([{ t: tEnd / 2, label: 'Kd 0 → 0.05' }]), SIZE)
     expect(g.markers).toHaveLength(1)

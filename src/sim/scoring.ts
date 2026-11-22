@@ -79,6 +79,7 @@ export function summarize(run: ScoredRun, plane: PlaneId = 'player'): LogEntry |
   const tags: string[] = []
   if (r.status === 'crashed') tags.push('crashed')
   if (r.retuned) tags.push('retuned')
+  if (r.mode === 'semi-auto') tags.push('semi-auto')
   return {
     lesson: r.lesson,
     mode: r.mode,

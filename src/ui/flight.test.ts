@@ -115,6 +115,24 @@ describe('createFlight', () => {
     expect(t(f)).toBe(0)
   })
 
+  it.each(['ready', 'running', 'paused', 'ended'] as const)('resets from %s to a fresh ready run', (phase) => {
+    let made = 0
+    const f = createFlight(() => (made++, pidRun()))
+    if (phase !== 'ready') f.fly()
+    if (phase === 'running' || phase === 'paused') f.advance(0.003)
+    if (phase === 'paused') f.togglePause()
+    if (phase === 'ended') flyToEnd(f, [0.05])
+    expect(f.phase).toBe(phase)
+    const old = f.run
+    const before = made
+    f.reset()
+    expect(made).toBe(before + 1)
+    expect(f.run).not.toBe(old)
+    expect(f.phase).toBe('ready')
+    expect(t(f)).toBe(0)
+    expect(f.advance(1)).toBe(0)
+  })
+
   it('ends when the run is done and flies again', () => {
     const f = createFlight(pidRun)
     f.fly()

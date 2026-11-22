@@ -92,6 +92,13 @@ describe('summarize', () => {
     expect(summarize(runOf({ ...base, status: 'crashed', retuned: true }), 'player')?.tags).toEqual(['crashed', 'retuned'])
   })
 
+  it('tags a Semi-auto run after crashed and retuned', () => {
+    expect(summarize(runOf({ ...base, mode: 'semi-auto' }), 'player')?.tags).toEqual(['semi-auto'])
+    expect(
+      summarize(runOf({ ...base, mode: 'semi-auto', status: 'crashed', retuned: true }), 'player')?.tags,
+    ).toEqual(['crashed', 'retuned', 'semi-auto'])
+  })
+
   it('returns undefined for a missing plane', () => {
     expect(summarize(runOf(base), 'wingman')).toBeUndefined()
   })

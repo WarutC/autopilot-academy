@@ -107,11 +107,15 @@ export function recorderGeometry(
     }
     tFlown = trace.t[n - 1]
   }
-  // The rest of the course reference, from the rings.
+  // The rest of the reference: from the rings, or flat at the player's
+  // setpoint in Semi-auto.
+  const player = snapshot.planes.find((p) => p.id === 'player')
+  const setpoint = player?.mode === 'semi-auto' ? player.ref : undefined
+  const refFor = (x: number): number => setpoint ?? refAt(course, x)
   if (course.endX > 0) {
     const from = n > 0 ? tFlown + TARGET_STEP_T : 0
-    for (let t = from; t < tEnd; t += TARGET_STEP_T) target.push({ x: X(t), y: Y(refAt(course, PLANT.speed * t)) })
-    target.push({ x: X(tEnd), y: Y(refAt(course, course.endX)) })
+    for (let t = from; t < tEnd; t += TARGET_STEP_T) target.push({ x: X(t), y: Y(refFor(PLANT.speed * t)) })
+    target.push({ x: X(tEnd), y: Y(refFor(course.endX)) })
   }
 
   const markers: MarkerShape[] = []

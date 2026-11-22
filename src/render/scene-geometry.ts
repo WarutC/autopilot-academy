@@ -167,9 +167,12 @@ export function sceneGeometry(snapshot: Snapshot, size: SceneSize): SceneGeometr
   const target: Point[] = []
   const x0 = Math.max(0, camX)
   const x1 = Math.min(course.endX, camX + W / sx)
+  // In Semi-auto the target is the player's setpoint, flat across the view.
+  const setpoint = player?.mode === 'semi-auto' ? player.ref : undefined
+  const targetAt = (x: number): number => setpoint ?? refAt(course, x)
   if (x1 > x0) {
-    for (let x = x0; x < x1; x += TARGET_STEP) target.push({ x: X(x), y: Y(refAt(course, x)) })
-    target.push({ x: X(x1), y: Y(refAt(course, x1)) })
+    for (let x = x0; x < x1; x += TARGET_STEP) target.push({ x: X(x), y: Y(targetAt(x)) })
+    target.push({ x: X(x1), y: Y(targetAt(x1)) })
   }
 
   const trail: Point[] = []

@@ -68,6 +68,14 @@ export interface Run extends ScoredRun {
    * drops no marker. A value other than -1, 0 or 1 is ignored.
    */
   setInput(stick: StickInput): void
+  /**
+   * Sets the player's altitude setpoint; in Semi-auto it replaces the course
+   * reference from the next control tick (`ctx.ref`, `ctx.refAhead`, the
+   * trace) and at once in the snapshot and the IAE. It is stored but unused in
+   * other modes, never counts as a retune and drops no marker. A non-finite
+   * value is ignored; others are clamped to the safe band.
+   */
+  setSetpoint(h: number): void
 }
 
 /** One plane: its plant, controller, estimator state, scoring and trace. */
@@ -82,6 +90,8 @@ interface Plane {
   retuned: boolean
   /** The player's stick, read in Manual mode only. */
   stick: StickInput
+  /** The player's target altitude, read in Semi-auto mode only. */
+  setpoint: number
   status: PlaneStatus
   plant: PlantState
   u: number
@@ -112,6 +122,7 @@ export function createRun(options: RunOptions): Run {
     controller: options.player.algorithm.create(params),
     retuned: false,
     stick: 0,
+    setpoint: PLANT.hStart,
     status: 'flying',
     plant: initialPlant(),
     u: 0,
@@ -132,6 +143,11 @@ export function createRun(options: RunOptions): Run {
   /** Physics steps taken so far; the clock is `k·dt`. */
   let k = 0
 
+  /** The plane's reference at `x`: its setpoint in Semi-auto, else the course. */
+  function refOf(p: Plane, x: number): number {
+    return p.mode === 'semi-auto' ? p.setpoint : refAt(course, x)
+  }
+
   function controlTick(p: Plane, t: number): void {
     const x = p.plant.x
     // No sensor noise yet: the measurement is the true altitude.
@@ -140,7 +156,7 @@ export function createRun(options: RunOptions): Run {
     p.yPrev = y
     p.hMeas = y
     p.hEst = y
-    const ref = refAt(course, x)
+    const ref = refOf(p, x)
     const ctx: ControlContext = Object.freeze({
       t,
       T: Tc,
@@ -148,7 +164,7 @@ export function createRun(options: RunOptions): Run {
       h: p.hEst,
       v: p.vEst,
       input: p.mode === 'manual' ? p.stick : 0,
-      refAhead: (ahead: number) => refAt(course, x + speed * ahead),
+      refAhead: (ahead: number) => refOf(p, x + speed * ahead),
     })
     const raw: unknown = p.controller.compute(ctx)
     p.u = typeof raw === 'number' && Number.isFinite(raw) ? clamp(raw, -1, 1) : 0
@@ -171,7 +187,7 @@ export function createRun(options: RunOptions): Run {
     if (tick) controlTick(p, t)
     p.plant = stepPlant(p.plant, p.u, 0)
     const { h, x } = p.plant
-    p.iae = integrateError(p.iae, refAt(course, x), h, dt)
+    p.iae = integrateError(p.iae, refOf(p, x), h, dt)
     p.energy = integrateEnergy(p.energy, p.u, dt)
 
     const ring = course.rings[p.ringIdx]
@@ -208,6 +224,7 @@ export function createRun(options: RunOptions): Run {
   function planeSnapshot(p: Plane): PlaneSnapshot {
     return {
       id: p.id,
+      mode: p.mode,
       status: p.status,
       h: p.plant.h,
       v: p.plant.v,
@@ -215,7 +232,7 @@ export function createRun(options: RunOptions): Run {
       u: p.u,
       hMeas: p.hMeas,
       hEst: p.hEst,
-      ref: refAt(course, p.plant.x),
+      ref: refOf(p, p.plant.x),
       points: p.points,
       results: p.results.slice(),
       retuned: p.retuned,
@@ -263,6 +280,10 @@ export function createRun(options: RunOptions): Run {
     setInput(stick) {
       if (stick !== -1 && stick !== 0 && stick !== 1) return
       player.stick = stick === 0 ? 0 : stick // never -0
+    },
+    setSetpoint(h) {
+      if (typeof h !== 'number' || !Number.isFinite(h)) return
+      player.setpoint = clamp(h, PLANT.hFloor, PLANT.hCeil)
     },
     result(plane: PlaneId): PlaneResult | undefined {
       const p = find(plane)

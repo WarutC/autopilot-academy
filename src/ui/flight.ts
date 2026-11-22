@@ -20,6 +20,8 @@ export interface Flight {
   readonly run: Run
   /** Starts a new run: Fly, Restart or Fly again. */
   fly(): void
+  /** Replaces the run with a fresh one that has not started; the phase becomes ready. */
+  reset(): void
   /** Pauses a running flight or resumes a paused one; other phases are unchanged. */
   togglePause(): void
   setSpeed(speed: Speed): void
@@ -52,6 +54,11 @@ export function createFlight(makeRun: () => Run): Flight {
       run = makeRun()
       acc = 0
       phase = run.done ? 'ended' : 'running'
+    },
+    reset() {
+      run = makeRun()
+      acc = 0
+      phase = 'ready'
     },
     togglePause() {
       if (phase === 'running') phase = 'paused'

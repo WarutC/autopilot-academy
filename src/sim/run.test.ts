@@ -419,3 +419,84 @@ describe('Run setInput', () => {
     expect(run.status()).toBe('flying')
   })
 })
+
+const semiWith = (algorithm: RunAlgorithm, params: Record<string, number> = {}) =>
+  createRun({ course: 101, mode: 'semi-auto', player: { algorithm, params } })
+
+describe('Run setSetpoint', () => {
+  it('drives ctx.ref, refAhead and the trace from the next tick, and the snapshot at once, in Semi-auto', () => {
+    const seen: ControlContext[] = []
+    const run = semiWith(fixed((ctx) => (seen.push(ctx), 0)))
+    run.step(4)
+    run.setSetpoint(80)
+    expect(run.snapshot().planes[0].ref).toBe(80)
+    expect(run.snapshot().planes[0].mode).toBe('semi-auto')
+    run.step(4)
+    expect(seen).toHaveLength(2)
+    expect(seen[0].ref).toBe(PLANT.hStart)
+    expect(seen[1].ref).toBe(80)
+    expect(seen[1].refAhead(2)).toBe(80)
+    expect(seen[1].refAhead(140 / PLANT.speed)).toBe(80)
+    const tr = run.snapshot().trace.player!
+    expect(tr.ref[0]).toBe(PLANT.hStart)
+    expect(tr.ref[1]).toBe(80)
+    const s = run.snapshot()
+    expect(s.planes[0].retuned).toBe(false)
+    expect(s.markers).toEqual([])
+    expect(run.result('player')!.retuned).toBe(false)
+  })
+
+  it('defaults to hStart in a new Semi-auto run', () => {
+    const seen: ControlContext[] = []
+    const run = semiWith(fixed((ctx) => (seen.push(ctx), 0)))
+    expect(run.snapshot().planes[0].ref).toBe(PLANT.hStart)
+    // Past the first course boundary the reference stays at hStart.
+    run.step(1400)
+    expect(seen.at(-1)!.ref).toBe(PLANT.hStart)
+    expect(seen.at(-1)!.refAhead(7)).toBe(PLANT.hStart)
+    // u = 0 holds hStart, so the IAE stays zero.
+    expect(run.result('player')!.iae).toBe(0)
+  })
+
+  it('is stored but unused outside Semi-auto', () => {
+    const seen: ControlContext[] = []
+    const run = runWith(fixed((ctx) => (seen.push(ctx), 0)))
+    run.setSetpoint(80)
+    run.step(4)
+    expect(seen[0].ref).toBe(PLANT.hStart)
+    expect(seen[0].refAhead(140 / PLANT.speed)).toBe(makeCourse(101).rings[0].h)
+    expect(run.snapshot().planes[0].ref).toBe(PLANT.hStart)
+    expect(run.snapshot().planes[0].mode).toBe('autopilot')
+  })
+
+  it('ignores non-finite values and clamps to the safe band, without throwing', () => {
+    const run = semiWith(fixed(() => 0))
+    run.setSetpoint(70)
+    expect(() => {
+      run.setSetpoint(NaN)
+      run.setSetpoint(Infinity)
+      run.setSetpoint(-Infinity)
+    }).not.toThrow()
+    expect(run.snapshot().planes[0].ref).toBe(70)
+    run.setSetpoint(500)
+    expect(run.snapshot().planes[0].ref).toBe(PLANT.hCeil)
+    run.setSetpoint(-3)
+    expect(run.snapshot().planes[0].ref).toBe(PLANT.hFloor)
+  })
+
+  it('measures the IAE against the setpoint in Semi-auto', () => {
+    const run = semiWith(fixed(() => 0))
+    run.setSetpoint(60)
+    run.step(100)
+    expect(run.result('player')!.iae).toBeCloseTo(10 * PLANT.dt * 100, 9)
+  })
+
+  it('brings PID to within 2 m of a 70 m setpoint after 6 s', () => {
+    const run = createRun({ course: 101, mode: 'semi-auto', player: { algorithm: pid, params: defaultParams(pid) } })
+    run.setSetpoint(70)
+    run.step(Math.round(6 / PLANT.dt))
+    expect(run.status()).toBe('flying')
+    expect(Math.abs(run.snapshot().planes[0].h - 70)).toBeLessThanOrEqual(2)
+    expect(summarize(run, 'player')!.tags).toEqual(['semi-auto'])
+  })
+})

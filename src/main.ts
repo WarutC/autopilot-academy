@@ -3,13 +3,16 @@ import './styles/layout.css'
 import { algorithms, defaultParams, findAlgorithm, type AlgorithmModule } from './algorithms/index.ts'
 import { draw as drawRecorder } from './render/recorder.ts'
 import { draw as drawScene } from './render/scene.ts'
+import { PLANT } from './sim/plant.ts'
 import { createRun, type Run, type RunPlayer } from './sim/run.ts'
 import type { FlightMode, Snapshot } from './sim/types.ts'
 import { createAutopilotCard } from './ui/autopilot-card.ts'
 import { bannerContent, createBanner } from './ui/banner.ts'
 import { createFlight, inFlight, type Phase } from './ui/flight.ts'
 import { createStick, gameKey, typingTarget } from './ui/input.ts'
+import { createModeSwitch } from './ui/mode-switch.ts'
 import { createScoreMirror } from './ui/score-mirror.ts'
+import { createSetpointSlider } from './ui/setpoint-slider.ts'
 import { createStickButtons } from './ui/stick-buttons.ts'
 import { loadTheme, watchTheme } from './ui/theme.ts'
 import { createToolbar } from './ui/toolbar.ts'
@@ -18,6 +21,8 @@ const canvas = document.createElement('canvas')
 canvas.className = 'scene'
 canvas.setAttribute('role', 'img')
 canvas.setAttribute('aria-label', 'Flight scene')
+// Focusable so the arrow keys can nudge the setpoint slider in Semi-auto.
+canvas.tabIndex = 0
 const banner = createBanner(document)
 const stage = document.createElement('div')
 stage.className = 'stage'
@@ -60,25 +65,66 @@ let lesson: AlgorithmModule = findAlgorithm('pid') ?? algorithms[0]!
 /** The player's autopilot; each Fly starts a run with the current one. */
 let player: RunPlayer = { algorithm: lesson, params: paramsById.get(lesson.id)! }
 
-/** A lesson whose modes include Manual flies by hand with the stick; any other flies on autopilot. */
+/** A lesson whose modes include Manual flies by hand with the stick. */
 const flysByHand = (m: AlgorithmModule) => m.modes.includes('manual')
-const runMode = (): FlightMode => (flysByHand(lesson) ? 'manual' : 'autopilot')
+/** A lesson's mode until the player picks another: Autopilot when it has one, else its first mode. */
+const defaultMode = (m: AlgorithmModule): FlightMode => (m.modes.includes('autopilot') ? 'autopilot' : m.modes[0]!)
+/** Each lesson's flight mode this session. */
+const modeById = new Map<string, FlightMode>()
+const runMode = (): FlightMode => modeById.get(lesson.id) ?? defaultMode(lesson)
 
-const flight = createFlight(() => createRun({ course: 101, mode: runMode(), player }))
+/** The player's target altitude in Semi-auto; it keeps its value across runs. */
+let setpoint: number = PLANT.hStart
 
 /** The one source of the player's stick; buttons and keys only press and release it. */
 const stick = createStick((value) => {
   if (inFlight(flight.phase)) flight.run.setInput(value)
 })
+
+// Every new run takes the player's live inputs, so a button held across Fly
+// counts from the first step and the setpoint holds across runs.
+const flight = createFlight(() => {
+  const run = createRun({ course: 101, mode: runMode(), player })
+  run.setSetpoint(setpoint)
+  run.setInput(stick.value)
+  return run
+})
+
 const stickButtons = createStickButtons(document, stick)
 stage.append(stickButtons.element)
 stickButtons.setVisible(flysByHand(lesson))
 
-/** Starts a run and hands it the stick as it is now, so a button held across Fly counts from the first step. */
-function fly(): void {
-  flight.fly()
-  flight.run.setInput(stick.value)
+const setpointSlider = createSetpointSlider(
+  document,
+  { min: PLANT.hFloor, max: PLANT.hCeil, step: 1, value: setpoint },
+  (value) => {
+    setpoint = value
+    // A finished run keeps the target it flew; the next Fly picks the setpoint up.
+    if (flight.phase !== 'ended') flight.run.setSetpoint(value)
+    requestDraw()
+  },
+)
+stage.append(setpointSlider.element)
+
+const modeSwitch = createModeSwitch(document, {
+  select(mode) {
+    if (!lesson.modes.includes(mode)) return
+    modeById.set(lesson.id, mode)
+    if (inFlight(flight.phase)) flight.fly()
+    else flight.reset()
+    syncUi()
+    syncMode()
+    requestDraw()
+  },
+})
+
+/** Reflects the lesson's modes into the mode switch and shows the slider in Semi-auto. */
+function syncMode(): void {
+  const mode = runMode()
+  modeSwitch.update(lesson.modes, mode)
+  setpointSlider.setVisible(mode === 'semi-auto')
 }
+syncMode()
 
 const autopilotCard = createAutopilotCard(document, algorithms, lesson.id, player.params, {
   change(key, value) {
@@ -102,13 +148,17 @@ const autopilotCard = createAutopilotCard(document, algorithms, lesson.id, playe
     autopilotCard.setLesson(next, player.params)
     stickButtons.setVisible(flysByHand(next))
     stick.releaseAll()
+    // Outside a flight the run is the next flight's preview, so show it in the new lesson's mode.
+    if (!inFlight(flight.phase)) flight.reset()
+    syncMode()
+    requestDraw()
   },
 })
 side.append(autopilotCard.element)
 
 const toolbar = createToolbar(document, {
   fly() {
-    fly()
+    flight.fly()
     delete canvas.dataset.fixture
     fixture = undefined
     syncUi()
@@ -123,6 +173,7 @@ const toolbar = createToolbar(document, {
     syncUi()
   },
 })
+toolbar.element.prepend(modeSwitch.element)
 main.append(toolbar.element, recorderCard)
 
 const mirror = createScoreMirror(document)
@@ -221,7 +272,7 @@ async function loadDevSwitches(): Promise<void> {
     player = { algorithm: DIVE, params: {} }
     // A flight started during the import flew the default; start it again with the dive.
     if (flight.phase !== 'ready') {
-      fly()
+      flight.fly()
       syncUi()
       requestDraw()
     }
@@ -252,6 +303,14 @@ function start(): void {
     if (!direction || !stickVisible() || typingTarget(document.activeElement as HTMLElement | null)) return
     event.preventDefault()
     if (!event.repeat) stick.press(direction, `key:${event.key.toLowerCase()}`)
+  })
+  // Up and down on the focused scene nudge the setpoint in Semi-auto.
+  canvas.addEventListener('keydown', (event) => {
+    if (runMode() !== 'semi-auto' || event.ctrlKey || event.metaKey || event.altKey) return
+    const direction = event.key === 'ArrowUp' ? 1 : event.key === 'ArrowDown' ? -1 : 0
+    if (direction === 0) return
+    event.preventDefault()
+    setpointSlider.nudge(direction)
   })
   // A key-up always releases its source, whatever the focus or modifiers are by then.
   window.addEventListener('keyup', (event) => stick.release(`key:${event.key.toLowerCase()}`))

@@ -22,6 +22,7 @@ function result(ring: number, pass: boolean): RingResult {
 function plane(over: Partial<PlaneSnapshot>): PlaneSnapshot {
   return {
     id: 'player',
+    mode: 'autopilot',
     status: 'flying',
     h: 50,
     v: 0,
@@ -205,6 +206,25 @@ describe('sceneGeometry: target line', () => {
     const last = atEnd.target[atEnd.target.length - 1]
     expect(last.x).toBeCloseTo((course.endX - atEnd.camera.camX) * atEnd.camera.sx, 9)
     expect(last.x).toBeLessThan(SIZE.width)
+  })
+})
+
+describe('sceneGeometry: Semi-auto target line', () => {
+  it('is flat at the player setpoint across the view', () => {
+    const g = sceneGeometry(snapshotWith(plane({ x: 500, mode: 'semi-auto', ref: 80 })), SIZE)
+    expect(g.target.length).toBeGreaterThan(2)
+    expect(g.target[0].x).toBeCloseTo(0, 9)
+    expect(g.target[g.target.length - 1].x).toBeCloseTo(SIZE.width, 9)
+    for (const p of g.target) expect(p.y).toBe(altitudeY(720, 80))
+    expect(g.hud.altitude).toBe('Altitude 50 m, target 80 m')
+  })
+
+  it('follows a live Semi-auto run setpoint at once', () => {
+    const run = createRun({ course: 101, mode: 'semi-auto', player: { algorithm: pid, params: defaultParams(pid) } })
+    run.step(40)
+    run.setSetpoint(80)
+    const g = sceneGeometry(run.snapshot(), SIZE)
+    for (const p of g.target) expect(p.y).toBe(altitudeY(720, 80))
   })
 })
 
