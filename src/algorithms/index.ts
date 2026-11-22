@@ -86,6 +86,9 @@ function isAlgorithmModule(value: unknown): value is AlgorithmModule {
   const m = value as Partial<Record<keyof AlgorithmModule, unknown>>
   return (
     typeof m.id === 'string' &&
+    typeof m.name === 'string' &&
+    typeof m.tag === 'string' &&
+    typeof m.lesson === 'string' &&
     typeof m.create === 'function' &&
     Array.isArray(m.params) &&
     Array.isArray(m.modes)

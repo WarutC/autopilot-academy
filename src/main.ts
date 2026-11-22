@@ -14,7 +14,7 @@ import { createDrawer, PHONE_LANDSCAPE } from './ui/drawer.ts'
 import { createFlight, inFlight, pauseForInterruption, playerRuns, type Phase } from './ui/flight.ts'
 import { createStick, gameKey, typingTarget } from './ui/input.ts'
 import { createModeSwitch } from './ui/mode-switch.ts'
-import { createPoleReadout } from './ui/pole-readout.ts'
+import { createPoleReadout, lessonAnalysis } from './ui/pole-readout.ts'
 import { browserStorage, validCourse } from './ui/persistence.ts'
 import { createRouter, drawCourse, followAddress, parseRoute } from './ui/router.ts'
 import { createScoreMirror } from './ui/score-mirror.ts'
@@ -299,7 +299,7 @@ function draw(): void {
   if (readoutDirty) {
     readoutDirty = false
     // The selected lesson and its own params, not the flying algorithm's, so a dev controller never hides the readout.
-    const analysis = lesson.analysis?.(store.params(lesson.id))
+    const analysis = lessonAnalysis(lesson, store.params(lesson.id))
     poleReadout.update(analysis)
     if (analysis && !poleReadout.canvas.hidden) drawSplane(poleCtx, analysis, theme, fitCanvas(poleReadout.canvas))
   }

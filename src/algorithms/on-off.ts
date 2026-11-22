@@ -1,13 +1,13 @@
 import type { ControlContext } from '../sim/types.ts'
 import type { AlgorithmModule, Params } from './index.ts'
 
-/** Bang-bang control: full climb below the target, full dive above, with a hysteresis band. */
+/** Bang-bang control: climb at the output level below the target, dive at it above, with a hysteresis band. */
 const onOff: AlgorithmModule = {
   id: 'on-off',
   name: 'On-Off',
   tag: 'Bang-bang',
   lesson:
-    'The elevator has only two settings: climb at its output level when the plane is below the target, and dive at the same level when it is above. ' +
+    'The elevator starts level, then has only two settings: climb at its output level once the plane is further below the target than the band, and dive at the same level once it is further above. Inside the band it keeps its last setting. ' +
     'It never settles, so it chatters around the target and the recorder shows the elevator as a square wave. ' +
     'Try: widen the hysteresis band and see how much calmer the flight gets, and what it costs in accuracy.',
   modes: ['semi-auto', 'autopilot'],
@@ -15,8 +15,8 @@ const onOff: AlgorithmModule = {
     { key: 'U', label: 'Output level', accessibleName: 'Output level', min: 0.1, max: 1, step: 0.05, default: 0.4 },
     {
       key: 'hyst',
-      label: 'Hysteresis band (m)',
-      accessibleName: 'Hysteresis band in meters',
+      label: 'Hysteresis (m either side)',
+      accessibleName: 'Hysteresis, meters either side of the target',
       min: 0,
       max: 10,
       step: 0.5,

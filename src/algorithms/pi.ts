@@ -10,7 +10,9 @@ const pi: AlgorithmModule = {
   name: 'PI',
   tag: 'Proportional-integral',
   lesson:
-    'The integral adds up the altitude error over time and keeps pushing until none is left, removing the steady error P leaves behind. ' +
+    'P alone already reaches a fixed target: the plane only stays level with the elevator neutral, and P is neutral only at zero error. ' +
+    'A steady push is different: if a constant downdraft pressed on the plane, P could only hold it below the target, because the error is the only thing that makes it pull up. ' +
+    'The integral adds up the altitude error over time and keeps pushing until none is left, so it can cancel such a push with no standing error. ' +
     'The price is a slow pole and extra overshoot, because the sum has to unwind after the plane reaches the target. ' +
     'Try: raise Ki and watch the slow pole move in the Pole readout, then turn off anti-windup on a big climb.',
   modes: ['semi-auto', 'autopilot'],

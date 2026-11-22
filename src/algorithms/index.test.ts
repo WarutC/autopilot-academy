@@ -26,11 +26,12 @@ afterEach(() => {
 })
 
 describe('algorithms (the real registry)', () => {
-  it('contains pid as a built-in', () => {
-    const pid = findAlgorithm('pid')
-    expect(pid).toBeDefined()
-    expect(pid?.community).toBe(false)
-    expect(algorithms.map((m) => m.id)).toContain('pid')
+  it('registers every lesson in BUILT_IN_ORDER as a built-in', () => {
+    for (const id of BUILT_IN_ORDER) expect(findAlgorithm(id)).toMatchObject({ id, community: false })
+  })
+
+  it('keeps the README example fixture out of the registry', () => {
+    expect(findAlgorithm('damped-p')).toBeUndefined()
   })
 
   it('lists the registered built-ins in BUILT_IN_ORDER, then community modules', () => {
@@ -141,13 +142,16 @@ describe('buildRegistry', () => {
         './empty.ts': {},
         './no-id.ts': { default: { ...stub('x'), id: 42 } },
         './nothing.ts': { default: null },
+        './no-name.ts': { default: { ...stub('no-name'), name: undefined } },
+        './no-tag.ts': { default: { ...stub('no-tag'), tag: 7 } },
+        './no-lesson.ts': { default: { ...stub('no-lesson'), lesson: null } },
         './pid.ts': file('pid'),
       },
       warn,
     )
     expect(list.map((m) => m.id)).toEqual(['pid'])
-    expect(warn).toHaveBeenCalledTimes(3)
-    for (const path of ['./empty.ts', './no-id.ts', './nothing.ts']) {
+    expect(warn).toHaveBeenCalledTimes(6)
+    for (const path of ['./empty.ts', './no-id.ts', './nothing.ts', './no-name.ts', './no-tag.ts', './no-lesson.ts']) {
       expect(warn.mock.calls.some(([msg]) => String(msg).includes(path))).toBe(true)
     }
   })

@@ -95,7 +95,7 @@ const fuzzy: AlgorithmModule = {
       compute(ctx: ControlContext): number {
         const { Ne, Nv, Ku } = params
         if (![ctx.ref, ctx.h, ctx.v, Ne, Nv, Ku].every(Number.isFinite)) return 0
-        // A zero span gives ±Infinity (clamped to ±1) or NaN (clamped to 0).
+        // A zero span gives ±Infinity, clamped to ±1, or 0/0 = NaN, which clamp treats as 0.
         const E = clamp((ctx.ref - ctx.h) / Ne!, -1, 1)
         const V = clamp(ctx.v / Nv!, -1, 1)
         const u = clamp(Ku! * fuzzyRules(E, V), -1, 1) + 0

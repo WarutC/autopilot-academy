@@ -173,6 +173,13 @@ describe('followAddress', () => {
     expect(location.hash).toBe('#/lesson/pid?course=101')
   })
 
+  it('selects only the lesson when the course is invalid', () => {
+    const { log, calls, location } = follow('#/lesson/manual?course=0', false)
+    expect(log).toEqual(['lesson manual', 'write manual 101'])
+    expect(calls).toEqual(['/autopilot-academy/?fixture#/lesson/manual?course=101'])
+    expect(location.hash).toBe('#/lesson/manual?course=101')
+  })
+
   it('loads only the course when the lesson is unknown', () => {
     const { log, calls, location } = follow('#/lesson/nope?course=7', false)
     expect(log).toEqual(['course 7', 'write pid 7'])

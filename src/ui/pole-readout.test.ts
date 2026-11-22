@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import type { AlgorithmAnalysis } from '../algorithms/index.ts'
-import { createPoleReadout, formatNumber, readoutContent } from './pole-readout.ts'
+import { describe, expect, it, vi } from 'vitest'
+import type { AlgorithmAnalysis, AlgorithmModule } from '../algorithms/index.ts'
+import { createPoleReadout, formatNumber, lessonAnalysis, readoutContent } from './pole-readout.ts'
 
 /** Just enough of an element for the readout: classes, attributes, text and children. */
 class FakeElement {
@@ -90,7 +90,7 @@ describe('readoutContent', () => {
   })
 
   it('shows a look-ahead time, or the preview-off sentence at 0, without the plane', () => {
-    expect(readoutContent({ lookahead: 2 })).toMatchObject({ visible: true, plane: false, lookahead: 'Looks 2.0 s ahead' })
+    expect(readoutContent({ lookahead: 2 })).toMatchObject({ visible: true, plane: false, lookahead: 'Looks 2.0 s ahead.' })
     expect(readoutContent({ lookahead: 0 })).toMatchObject({
       visible: true,
       plane: false,
@@ -104,9 +104,61 @@ describe('readoutContent', () => {
     }
   })
 
+  it('drops non-finite gains and malformed or non-finite poles', () => {
+    const c = readoutContent({
+      poles: [null, 3, { re: Number.NaN, im: 0 }, ...PAIR] as unknown as AlgorithmAnalysis['poles'],
+      gains: { k1: 0.2, k2: Number.NaN, k3: Number.POSITIVE_INFINITY },
+    })
+    expect(c).toMatchObject({ visible: true, plane: true, poles: ['−0.25 ± 1.39j'], gains: ['k1 = 0.200'] })
+    expect(readoutContent({ poles: [null] as unknown as AlgorithmAnalysis['poles'], gains: { k1: Number.NaN } })).toMatchObject({
+      visible: false,
+      plane: false,
+    })
+  })
+
+  it('ignores a negative or infinite look-ahead', () => {
+    for (const lookahead of [-1, -0.5, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const c = readoutContent({ lookahead })
+      expect(c.visible).toBe(false)
+      expect(c.lookahead).toBeUndefined()
+    }
+  })
+
   it('never writes to its input', () => {
-    const analysis = Object.freeze({ poles: Object.freeze(PAIR.map((p) => Object.freeze(p))), gains: Object.freeze({ k1: 1 }) })
+    const analysis = Object.freeze({ poles: Object.freeze(PAIR.map((p) => Object.freeze({ ...p }))), gains: Object.freeze({ k1: 1 }) })
     expect(() => readoutContent(analysis)).not.toThrow()
+  })
+})
+
+describe('lessonAnalysis', () => {
+  const lesson = (analysis?: AlgorithmModule['analysis']): AlgorithmModule => ({
+    id: 'probe',
+    name: 'Probe',
+    tag: 'Test',
+    lesson: 'Probe. Try: nothing.',
+    modes: ['autopilot'],
+    params: [],
+    create: () => ({ compute: () => 0 }),
+    ...(analysis ? { analysis } : {}),
+  })
+
+  it('returns the module analysis for the params given', () => {
+    const warn = vi.fn()
+    expect(lessonAnalysis(lesson((p) => ({ lookahead: p.N! })), { N: 3 }, warn)).toEqual({ lookahead: 3 })
+    expect(lessonAnalysis(lesson(), {}, warn)).toBeUndefined()
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('returns undefined when the analysis throws, warning once per module', () => {
+    const warn = vi.fn()
+    const broken = lesson(() => {
+      throw new Error('boom')
+    })
+    expect(lessonAnalysis(broken, {}, warn)).toBeUndefined()
+    expect(lessonAnalysis(broken, {}, warn)).toBeUndefined()
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0]![0]).toContain('probe')
+    expect(readoutContent(lessonAnalysis(broken, {}, warn)).visible).toBe(false)
   })
 })
 
@@ -146,7 +198,7 @@ describe('createPoleReadout', () => {
     readout.update({ lookahead: 2 })
     expect(root.hidden).toBe(false)
     expect(canvas.hidden).toBe(true)
-    expect(byClass('pole-readout-lookahead')[0]!.textContent).toBe('Looks 2.0 s ahead')
+    expect(byClass('pole-readout-lookahead')[0]!.textContent).toBe('Looks 2.0 s ahead.')
     readout.update({ lookahead: 0 })
     expect(byClass('pole-readout-lookahead')[0]!.textContent).toBe('Preview off: assumes the target stays where it is now.')
   })

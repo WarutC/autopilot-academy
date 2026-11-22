@@ -21,8 +21,8 @@ describe('on-off module', () => {
     })
     expect(onOff.params[1]).toMatchObject({
       key: 'hyst',
-      label: 'Hysteresis band (m)',
-      accessibleName: 'Hysteresis band in meters',
+      label: 'Hysteresis (m either side)',
+      accessibleName: 'Hysteresis, meters either side of the target',
       min: 0,
       max: 10,
       step: 0.5,

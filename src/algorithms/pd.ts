@@ -10,7 +10,7 @@ const pd: AlgorithmModule = {
   tag: 'Proportional-derivative',
   lesson:
     'P pushes toward the target, and D brakes in proportion to the climb rate, so the plane slows down as it closes in. ' +
-    'That damps the swing P alone leaves behind, so it dies out quickly, though the defaults still overshoot a little. ' +
+    'That damps the swing P alone leaves behind, so it dies out within a few seconds, though at the defaults the plane still overshoots a small step by more than a quarter of the step. ' +
     'Try: raise Kd and watch the crosses in the Pole readout move toward the real axis as the swing fades.',
   modes: ['semi-auto', 'autopilot'],
   params: [

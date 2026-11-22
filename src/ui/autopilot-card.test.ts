@@ -221,7 +221,7 @@ describe('createAutopilotCard', () => {
     expect(chips.map((c) => c.type)).toEqual(algorithms.map(() => 'button'))
     algorithms.forEach((m, i) => {
       const lines = chips[i]!.children.map((c) => (typeof c === 'string' ? c : c.textContent))
-      expect(lines).toEqual([`Lesson ${i + 1}`, m.name, m.tag])
+      expect(lines).toEqual([`Lesson ${i + 1}`, m.name, m.community ? 'Community' : m.tag])
       expect(chips[i]!.getAttribute('aria-pressed')).toBe(String(m.id === 'pid'))
     })
     const chipOf = (id: string) => chips[algorithms.findIndex((m) => m.id === id)]!
@@ -324,22 +324,23 @@ describe('createAutopilotCard with a contributed module', () => {
     const { registry, warn } = setupCommunity()
     expect(warn).not.toHaveBeenCalled()
     expect(registry.map((m) => m.id)).toEqual([...BUILT_IN_ORDER, 'damped-p'])
-    expect(registry[11]).toMatchObject({ id: 'damped-p', community: true })
-    expect(registry[10]).toMatchObject({ id: 'mpc', community: false })
+    expect(registry[BUILT_IN_ORDER.length]).toMatchObject({ id: 'damped-p', community: true })
+    expect(registry[BUILT_IN_ORDER.length - 1]).toMatchObject({ id: BUILT_IN_ORDER.at(-1), community: false })
   })
 
   it('reads "Community" in place of the tag on its chip, in text and accessible name', () => {
     const { byClass } = setupCommunity()
     const chips = byClass('lesson-chip')
-    expect(chips).toHaveLength(12)
-    const chip = chips[11]!
+    const n = BUILT_IN_ORDER.length + 1
+    expect(chips).toHaveLength(n)
+    const chip = chips[n - 1]!
     expect(chip.className.split(' ')).toContain('lesson-chip-community')
     expect(chip.children.map((c) => (typeof c === 'string' ? c : c.textContent))).toEqual([
-      'Lesson 12',
+      `Lesson ${n}`,
       'Damped P',
       'Community',
     ])
-    expect(chip.getAttribute('aria-label')).toBe('Lesson 12, Damped P, Community')
+    expect(chip.getAttribute('aria-label')).toBe(`Lesson ${n}, Damped P, Community`)
     expect(chip.textContent).not.toContain(dampedP.tag)
   })
 

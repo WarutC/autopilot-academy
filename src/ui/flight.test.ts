@@ -294,18 +294,28 @@ describe('playerRuns', () => {
     expect(player(first).u).toBe(1)
 
     const created: string[] = []
+    const seen: number[] = []
     const tracked: RunPlayer = {
-      algorithm: { id: 'tracked', create: (params) => (created.push('tracked'), pAlgorithm.create(params)) },
+      algorithm: {
+        id: 'tracked',
+        create(params) {
+          created.push('tracked')
+          const p = pAlgorithm.create(params)
+          return { compute: (ctx) => (seen.push(ctx.input), p.compute(ctx)) }
+        },
+      },
       params: defaultParams(pAlgorithm),
     }
-    inputs = { course: 303, mode: 'semi-auto', player: tracked, setpoint: 30, stick: -1 }
+    inputs = { course: 303, mode: 'semi-auto', player: tracked, setpoint: 30, stick: 1 }
     const second = makeRun()
     second.step(1)
     expect(created).toEqual(['tracked'])
     expect(second.snapshot().course).toBe(303)
     expect(player(second).mode).toBe('semi-auto')
     expect(player(second).ref).toBe(30)
-    // The stick only reaches the controller in Manual; a P player starting level at 50 m dives toward 30 m.
+    // The stick only reaches the controller in Manual: held up here, the P player sees it released and dives toward 30 m.
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen.every((input) => input === 0)).toBe(true)
     expect(player(second).u).toBeLessThan(0)
 
     inputs = { ...inputs, mode: 'manual', player: manualPlayer, stick: -1 }

@@ -9,7 +9,7 @@
 // H = q·GᵀG + r_w·I and f = q·Gᵀ(Φ·x0 − r) (the constant factor 2 is dropped).
 // It is solved with a Cholesky solve of the unconstrained optimum; if that
 // leaves the box, a few active-set refinements on the free variables, then a
-// short projected-gradient polish.
+// few projected coordinate sweeps (Gauss-Seidel style) as a polish.
 
 import { clamp } from '../sim/clamp.ts'
 import { PLANT } from '../sim/plant.ts'
@@ -25,7 +25,7 @@ const MAX_HORIZON = 40
 const STEPS_PER_SECOND = Math.round(1 / MODEL_STEP)
 /** Active-set refinements tried when the unconstrained optimum leaves the box. */
 const ACTIVE_SET_ITERATIONS = 25
-/** Projected-gradient polish steps after the active-set refinements. */
+/** Projected coordinate sweeps after the active-set refinements. */
 const POLISH_ITERATIONS = 20
 /** A command this close to a bound counts as on it. */
 const BOUND_TOL = 1e-9
@@ -34,7 +34,8 @@ const CHANGE_TOL = 1e-7
 
 /**
  * The prediction model and QP matrices for one horizon and weight pair, plus
- * the scratch buffers a solve needs. Matrices are flat, row-major `N×N`.
+ * working buffers every solve overwrites; the plan a solve returns is a new
+ * array each time. Matrices are flat, row-major `N×N`.
  */
 export interface MpcModel {
   /** Horizon, in model steps. */
@@ -55,7 +56,7 @@ export interface MpcModel {
   readonly L: Float64Array
   /** Largest absolute row sum of `H`, a bound on its largest eigenvalue. */
   readonly lip: number
-  // Scratch, overwritten by every solve.
+  // Working buffers, overwritten by every solve.
   readonly f: Float64Array
   readonly work: Float64Array
   readonly grad: Float64Array
@@ -255,7 +256,8 @@ export function solve(model: MpcModel, h: number, v: number, refs: ArrayLike<num
     if (!(change >= CHANGE_TOL)) break
   }
 
-  // Projected-gradient polish with step 1/lip.
+  // Projected coordinate sweeps with step 1/lip: each command moves against its
+  // gradient from the latest values of the others, then is clamped.
   const step = 1 / model.lip
   for (let it = 0; it < POLISH_ITERATIONS; it++) {
     for (let i = 0; i < N; i++) {
@@ -288,7 +290,7 @@ const mpc: AlgorithmModule = {
     'picks the elevator moves that keep it closest to the target without pushing past the elevator limit, ' +
     'flies only the first move, then re-plans every 0.1 s. ' +
     'Q weighs altitude error and R weighs elevator effort. ' +
-    'Try: switch Preview off to see what look-ahead is worth, or shrink the horizon and watch the look-ahead in the Pole readout.',
+    'Try: switch Preview off to see what look-ahead is worth, or with Preview on, shrink the horizon and watch the look-ahead in the Pole readout.',
   modes: ['semi-auto', 'autopilot'],
   params: [
     {

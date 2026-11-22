@@ -15,7 +15,7 @@ const lqr: AlgorithmModule = {
     'Instead of placing poles, say what you care about and let the math find the best gains. ' +
     'Q weights the altitude error and the climb rate, R weights elevator effort, and solving the Riccati equation gives u = k1·e − k2·v, where e is the altitude error and v the climb rate. ' +
     'Cheap effort buys an aggressive loop; expensive effort buys a gentle one. ' +
-    'Try: raise Q altitude error or Q climb rate, or lower R elevator effort, and watch the poles and k1 and k2 in the Pole readout move as the loop gets bolder.',
+    'Try: raise Q altitude error or lower R elevator effort and watch the poles and k1 and k2 in the Pole readout move as the loop gets bolder, then raise Q climb rate and watch it calm down.',
   modes: ['semi-auto', 'autopilot'],
   params: [
     {

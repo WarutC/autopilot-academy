@@ -36,6 +36,8 @@ Open `src/algorithms/pid.ts` next to this. Its default export is an
 - `id`: `'pid'`, the file name. It also appears in the page URL.
 - `name`: `'PID'`, shown on the lesson chip and above the lesson.
 - `tag`: `'Three-term'`, the short line under the name on a built-in chip.
+  Every module needs one, but the chip of a module you add reads `Community`
+  in its place.
 - `lesson`: plain text, no HTML, ending with a sentence that starts with
   `Try:`. The card shows "Try:" in bold, so end with something to do.
 - `modes`: the flight modes the module can fly, here
@@ -57,9 +59,12 @@ Open `src/algorithms/pid.ts` next to this. Its default export is an
   (control period, s), `ref` (altitude setpoint, m), `h` (altitude, m), `v`
   (climb rate, m/s), `input` (the manual stick) and `refAhead(seconds)`, the
   reference that far in front of the plane.
-- `analysis(params)`: optional. Return `poles` (closed-loop poles of the
-  linear loop, drawn in the Pole readout), `gains` (computed gains by name)
-  and `lookahead` (seconds the controller plans ahead). PID builds its
+- `analysis(params)`: optional; without it the Pole readout is hidden for
+  your lesson. Return `poles` (closed-loop poles of the linear loop, drawn in
+  the Pole readout), `gains` (computed gains by name) and `lookahead` (seconds
+  the controller plans ahead). It runs on every parameter change, so keep it
+  quick and pure, and never throw: if it does, the readout stays hidden and
+  the console shows a warning. PID builds its
   characteristic polynomial from the plant constants in `src/sim/plant.ts`
   (`v' = -a·v + b·u`, `h' = v`) and finds its roots with `polyRoots` from
   `src/algorithms/lib/poly.ts`.

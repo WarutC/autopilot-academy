@@ -3,7 +3,7 @@
 // time. Built from `AlgorithmAnalysis` alone, so any module that reports one
 // gets the card; the page paints the canvas with `render/splane`.
 
-import type { AlgorithmAnalysis, Complex } from '../algorithms/index.ts'
+import type { AlgorithmAnalysis, AlgorithmModule, Complex, Params } from '../algorithms/index.ts'
 
 /** What the card shows for one analysis. */
 export interface ReadoutContent {
@@ -28,9 +28,38 @@ export function formatNumber(x: number, digits: number): string {
   return text.replace('-', MINUS)
 }
 
+const warned = new WeakSet<AlgorithmModule>()
+
+/**
+ * `module`'s analysis for `params`, or undefined when it has none or it throws.
+ * A throwing module is reported through `warn` once and its card stays hidden.
+ */
+export function lessonAnalysis(
+  module: AlgorithmModule,
+  params: Params,
+  warn: (message: string) => void = console.warn,
+): AlgorithmAnalysis | undefined {
+  try {
+    return module.analysis?.(params)
+  } catch (error) {
+    if (!warned.has(module)) {
+      warned.add(module)
+      warn(`The analysis of algorithm "${module.id}" failed: ${String(error)}`)
+    }
+    return undefined
+  }
+}
+
+/** True for a pole with finite real and imaginary parts. */
+export function isFinitePole(p: unknown): p is Complex {
+  if (typeof p !== 'object' || p === null) return false
+  const { re, im } = p as Partial<Complex>
+  return Number.isFinite(re) && Number.isFinite(im)
+}
+
 /** Lines for `poles`: a conjugate pair as "re ± imj", a real pole as "re", a lone complex pole as "re + imj" or "re − imj". */
-function poleLines(poles: readonly Complex[]): string[] {
-  const finite = poles.filter((p) => Number.isFinite(p.re) && Number.isFinite(p.im))
+function poleLines(poles: readonly unknown[]): string[] {
+  const finite = poles.filter(isFinitePole)
   const scale = Math.max(1, ...finite.map((p) => Math.hypot(p.re, p.im)))
   const tol = 1e-9 * scale
   const used = new Set<number>()
@@ -59,16 +88,20 @@ function poleLines(poles: readonly Complex[]): string[] {
 
 /** What the readout shows for `analysis`; pure. */
 export function readoutContent(analysis: AlgorithmAnalysis | undefined): ReadoutContent {
-  const poles = analysis?.poles ? poleLines(analysis.poles) : []
-  const gains = analysis?.gains
-    ? Object.entries(analysis.gains).map(([name, value]) => `${name} = ${formatNumber(value, 3)}`)
-    : []
+  const poles = Array.isArray(analysis?.poles) ? poleLines(analysis.poles) : []
+  const rawGains: unknown = analysis?.gains
+  const gains =
+    typeof rawGains === 'object' && rawGains !== null
+      ? Object.entries(rawGains)
+          .filter((entry): entry is [string, number] => Number.isFinite(entry[1]))
+          .map(([name, value]) => `${name} = ${formatNumber(value, 3)}`)
+      : []
   const ahead = analysis?.lookahead
   let lookahead: string | undefined
-  if (typeof ahead === 'number' && Number.isFinite(ahead)) {
+  if (typeof ahead === 'number' && Number.isFinite(ahead) && ahead >= 0) {
     lookahead =
       ahead > 0
-        ? `Looks ${formatNumber(ahead, 1)} s ahead`
+        ? `Looks ${formatNumber(ahead, 1)} s ahead.`
         : 'Preview off: assumes the target stays where it is now.'
   }
   const plane = poles.length > 0

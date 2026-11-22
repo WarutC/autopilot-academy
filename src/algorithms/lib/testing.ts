@@ -37,9 +37,9 @@ export function expectRootsOf(chi: readonly number[], poles: readonly Complex[])
  * parameters, inside the caller's `describe`.
  */
 export function fliesCourse101(module: AlgorithmModule): void {
-  it('passes at least 6 of 10 rings in Autopilot without crashing', () => {
+  it('finishes Autopilot with at least 6 of 10 rings', () => {
     const flight = flyCourse(module, defaultParams(module), 'autopilot')
-    expect(flight.status).not.toBe('crashed')
+    expect(flight.status).toBe('finished')
     expect(flight.ringsPassed).toBeGreaterThanOrEqual(6)
   })
 

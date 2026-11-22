@@ -47,7 +47,8 @@ export function splaneGeometry(poles: readonly Complex[], size: SceneSize): Spla
   const W = Math.max(0, size.width)
   const H = Math.max(0, size.height)
   const origin = { x: 0.62 * W, y: H / 2 }
-  const finite = poles.filter((p) => Number.isFinite(p.re) && Number.isFinite(p.im))
+  // A contributed module may report a malformed entry; skip it like a non-finite one.
+  const finite = poles.filter((p) => typeof p === 'object' && p !== null && Number.isFinite(p.re) && Number.isFinite(p.im))
   let extent = MIN_EXTENT
   for (const p of finite) extent = Math.max(extent, MARGIN * Math.abs(p.re), MARGIN * Math.abs(p.im))
   const anyUnstable = finite.some((p) => p.re > 0)
@@ -72,7 +73,7 @@ function line(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number,
 export function draw(ctx: CanvasRenderingContext2D, analysis: AlgorithmAnalysis, theme: Theme, size: SceneSize): void {
   const { width: W, height: H } = size
   const poles = analysis.poles
-  if (!(W > 0 && H > 0) || !poles || poles.length === 0) return
+  if (!(W > 0 && H > 0) || !Array.isArray(poles) || poles.length === 0) return
   const dpr = size.dpr > 0 ? size.dpr : 1
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   const g = splaneGeometry(poles, size)
