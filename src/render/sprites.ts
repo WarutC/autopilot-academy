@@ -30,14 +30,14 @@ export const PLANE_ROWS: SpriteGrid = [
   '......KRRRRRRRRRRK',
   '......KKKKKKKKKKKK',
   'KK.......K..KK..K',
-  'KRK......K.KPPK.K.....K',
+  'KRK......K.KPPKKK.....K',
   'KRRK.....K.KPPKBK.....KG',
   'KRRRKKKKKKKKKKKKKKKKKKKYK',
   'KRRRRRRRRRRRRRRRRRRRRRKYYK',
   'KDDWWWWWWWWWWWWWWWWWWRKYK',
   'KKKKRRRRRRRRRRRRRRRRRRKG',
   '...KKDDDDDDDDDDDDDKKKK..G',
-  '......KKKKKKKKKKKK',
+  '.....KKKKKKKKKKKKK',
   '..........K...K',
   '.........KKK.KKK',
   '..........K...K',
@@ -113,10 +113,37 @@ export function spritePixel(length: number): number {
   return Number.isFinite(length) ? Math.max(SPRITE_PIXEL, Math.round(length / PLANE_WIDTH)) : SPRITE_PIXEL
 }
 
+/** One horizontal run of one opaque key in a grid row, columns `x` to `end` (exclusive). */
+export interface GridRun {
+  readonly x: number
+  readonly end: number
+  readonly y: number
+  readonly key: string
+  readonly color: string
+}
+
+/** Every run of one opaque key in `grid` that `palette` colors, row by row, left to right. */
+export function gridRuns(grid: SpriteGrid, palette: Palette): GridRun[] {
+  const out: GridRun[] = []
+  grid.forEach((row, y) => {
+    let x = 0
+    while (x < row.length) {
+      const key = row[x]!
+      let end = x + 1
+      while (end < row.length && row[end] === key) end++
+      const color = palette[key]
+      if (key !== CLEAR && color !== undefined) out.push({ x, end, y, key, color })
+      x = end
+    }
+  })
+  return out
+}
+
 /**
  * Paints `grid` with its top-left at (`left`, `top`), each sprite pixel a
  * `px`-square, skipping keys in `skip`. Each horizontal run of one key is one
- * `fillRect`, so integer arguments keep every edge on a whole pixel.
+ * `fillRect` whose edges are snapped to device pixels at `dpr`, so a
+ * fractional pixel ratio never blurs an edge and adjacent runs share theirs.
  */
 export function paintGrid(
   ctx: CanvasRenderingContext2D,
@@ -126,33 +153,30 @@ export function paintGrid(
   top: number,
   px: number,
   skip: ReadonlySet<string> = new Set(),
+  dpr = 1,
 ): void {
+  const ratio = dpr > 0 && Number.isFinite(dpr) ? dpr : 1
+  const snap = (v: number): number => Math.round(v * ratio) / ratio
   ctx.imageSmoothingEnabled = false
-  grid.forEach((row, y) => {
-    let x = 0
-    while (x < row.length) {
-      const key = row[x]!
-      let end = x + 1
-      while (end < row.length && row[end] === key) end++
-      const color = palette[key]
-      if (key !== CLEAR && !skip.has(key) && color !== undefined) {
-        ctx.fillStyle = color
-        ctx.fillRect(left + x * px, top + y * px, (end - x) * px, px)
-      }
-      x = end
-    }
-  })
+  for (const run of gridRuns(grid, palette)) {
+    if (skip.has(run.key)) continue
+    const x0 = snap(left + run.x * px)
+    const y0 = snap(top + run.y * px)
+    ctx.fillStyle = run.color
+    ctx.fillRect(x0, y0, snap(left + run.end * px) - x0, snap(top + (run.y + 1) * px) - y0)
+  }
 }
 
 const NO_BLADE: ReadonlySet<string> = new Set([BLADE])
 
-/** Paints `plane` as its pitch frame in `palette`, centered as the plane shape says. */
+/** Paints `plane` as its pitch frame in `palette`, centered as the plane shape says, crisp at `dpr`. */
 export function drawPlaneSprite(
   ctx: CanvasRenderingContext2D,
   plane: PlaneShape,
   palette: Palette,
   t: number,
   reducedMotion: boolean,
+  dpr = 1,
 ): void {
   if (!(Number.isFinite(plane.x) && Number.isFinite(plane.y))) return
   const px = spritePixel(plane.length)
@@ -161,6 +185,6 @@ export function drawPlaneSprite(
   const top = Math.round(plane.y - (frame.length / 2) * px)
   // Scoped, so the smoothing setting does not leak onto the rest of the scene.
   ctx.save()
-  paintGrid(ctx, frame, palette, left, top, px, propellerOn(t, reducedMotion) ? undefined : NO_BLADE)
+  paintGrid(ctx, frame, palette, left, top, px, propellerOn(t, reducedMotion) ? undefined : NO_BLADE, dpr)
   ctx.restore()
 }

@@ -4,12 +4,9 @@
 // sharp at any device pixel ratio. Decoration only: hidden from assistive tech.
 
 import { SPRITE_PIXEL } from './scene-geometry.ts'
-import type { Palette, SpriteGrid } from './sprites.ts'
+import { gridRuns, type Palette, type SpriteGrid } from './sprites.ts'
 
 export const SVG_NS = 'http://www.w3.org/2000/svg'
-
-/** Transparent pixel. */
-const CLEAR = '.'
 
 /** The Whale facing left, tail raised. Keys: K outline and eye, C body, W belly. */
 export const WHALE: SpriteGrid = [
@@ -84,20 +81,10 @@ const MASCOTS: Readonly<Record<MascotKind, { readonly grid: SpriteGrid; readonly
  */
 export function gridPaths(grid: SpriteGrid, palette: Palette): { readonly fill: string; readonly d: string }[] {
   const byColor = new Map<string, string>()
-  grid.forEach((row, y) => {
-    let x = 0
-    while (x < row.length) {
-      const key = row[x]!
-      let end = x + 1
-      while (end < row.length && row[end] === key) end++
-      const color = palette[key]
-      if (key !== CLEAR && color !== undefined) {
-        const n = end - x
-        byColor.set(color, `${byColor.get(color) ?? ''}M${x} ${y}h${n}v1h-${n}z`)
-      }
-      x = end
-    }
-  })
+  for (const { x, end, y, color } of gridRuns(grid, palette)) {
+    const n = end - x
+    byColor.set(color, `${byColor.get(color) ?? ''}M${x} ${y}h${n}v1h-${n}z`)
+  }
   return [...byColor].map(([fill, d]) => ({ fill, d }))
 }
 

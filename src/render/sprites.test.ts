@@ -5,6 +5,7 @@ import {
   PLANE_PAD,
   PLANE_ROWS,
   PLANE_WIDTH,
+  PITCH_SLOPES,
   PLAYER_PALETTE,
   WINGMAN_PALETTE,
   drawPlaneSprite,
@@ -93,6 +94,25 @@ describe('PLANE_FRAMES', () => {
     expect(shearRows(PLANE_WIDTH - 1, 0.4)).toBeLessThan(0)
   })
 
+  it('outlines every opaque pixel except the propeller blades', () => {
+    const at = (x: number, y: number) => PLANE_ROWS[y]?.[x] ?? '.'
+    PLANE_ROWS.forEach((row, y) => {
+      for (let x = 0; x < row.length; x++) {
+        const key = row[x]!
+        if (key === '.' || key === 'K' || key === 'G') continue
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          expect(at(x + dx, y + dy), `${key} at ${x},${y}`).not.toBe('.')
+        }
+      }
+    })
+  })
+
+  it('pads enough rows for the steepest shear of any column', () => {
+    let most = 0
+    for (const slope of PITCH_SLOPES) for (let x = 0; x < PLANE_WIDTH; x++) most = Math.max(most, Math.abs(shearRows(x, slope)))
+    expect(PLANE_PAD).toBeGreaterThanOrEqual(most)
+  })
+
   it('moves whole columns, so every frame holds the plane pixels with none lost', () => {
     const level = pixels(PLANE_ROWS)
     const slopes = [-0.4, -0.2, 0, 0.2, 0.4]
@@ -135,6 +155,46 @@ describe('paintGrid', () => {
   })
 })
 
+describe('paintGrid at a fractional pixel ratio', () => {
+  it.each([1.25, 1.5])('lands every edge on a device pixel at dpr %s, with adjacent runs abutting', (dpr) => {
+    const { ctx, rects } = spriteContext()
+    const grid = PLANE_FRAMES[3]!
+    paintGrid(ctx, grid, PLAYER_PALETTE, 101, 57, 3, undefined, dpr)
+    expect(rects.length).toBeGreaterThan(0)
+    const onDevice = (v: number) => expect(Math.abs(v * dpr - Math.round(v * dpr))).toBeLessThan(1e-9)
+    for (const { args } of rects) {
+      const [x, y, w, h] = args as [number, number, number, number]
+      for (const edge of [x, y, x + w, y + h]) onDevice(edge)
+      // Each run keeps the nominal 3 px sprite pixel to within one device pixel.
+      expect(Math.abs(h - 3)).toBeLessThanOrEqual(1 / dpr + 1e-9)
+    }
+    // Runs in one row share edges, and each row starts where the row above ends.
+    const rows = new Map<number, number[][]>()
+    for (const { args } of rects) rows.set(args[1]!, [...(rows.get(args[1]!) ?? []), [...args]])
+    const tops = [...rows.keys()].sort((a, b) => a - b)
+    for (const top of tops) {
+      const runs = rows.get(top)!.sort((a, b) => a[0]! - b[0]!)
+      for (let i = 1; i < runs.length; i++) {
+        const prev = runs[i - 1]!
+        expect(runs[i]![0]!).toBeGreaterThanOrEqual(prev[0]! + prev[2]! - 1e-9)
+      }
+      for (const r of runs) expect(r[3]).toBe(runs[0]![3])
+    }
+    for (let i = 1; i < tops.length; i++) {
+      const above = rows.get(tops[i - 1]!)![0]!
+      if (tops[i]! - tops[i - 1]! < 4) expect(tops[i]!).toBeCloseTo(above[1]! + above[3]!, 9)
+    }
+  })
+
+  it('abuts two adjacent runs exactly where both meet', () => {
+    const { ctx, rects } = spriteContext()
+    paintGrid(ctx, ['KR', 'RK'], PLAYER_PALETTE, 7, 7, 3, undefined, 1.5)
+    const [a, b, c] = rects.map((r) => r.args) as [number[], number[], number[]]
+    expect(a[0]! + a[2]!).toBe(b[0])
+    expect(a[1]! + a[3]!).toBe(c[1])
+  })
+})
+
 describe('drawPlaneSprite', () => {
   const plane = { x: 444.37, y: 301.62, angle: 0.3, length: 108.03 }
 
@@ -160,6 +220,28 @@ describe('drawPlaneSprite', () => {
     const top = Math.round(plane.y - 13.5 * px)
     expect(Math.min(...rects.map((r) => r.args[0]!))).toBe(left)
     expect(Math.min(...rects.map((r) => r.args[1]!))).toBe(top + PLANE_PAD * px)
+  })
+
+  it.each([
+    [0.3, 3],
+    [-0.3, 1],
+  ])('paints the frame for angle %s', (angle, index) => {
+    const painted = (frame: readonly string[]) => {
+      const { ctx, rects } = spriteContext()
+      paintGrid(ctx, frame, PLAYER_PALETTE, 0, 0, 1)
+      return rects.map((r) => `${r.fill}:${r.args.join(',')}`)
+    }
+    const { ctx, rects } = spriteContext()
+    const px = spritePixel(plane.length)
+    const left = Math.round(plane.x - 0.55 * PLANE_WIDTH * px)
+    const top = Math.round(plane.y - (PLANE_FRAMES[index]!.length / 2) * px)
+    drawPlaneSprite(ctx, { ...plane, angle }, PLAYER_PALETTE, 0, false)
+    const got = rects.map((r) => {
+      const [x, y, w, h] = r.args as [number, number, number, number]
+      return `${r.fill}:${(x - left) / px},${(y - top) / px},${w / px},${h / px}`
+    })
+    expect(got).toEqual(painted(PLANE_FRAMES[index]!))
+    expect(got).not.toEqual(painted(PLANE_FRAMES[2]!))
   })
 
   it('flickers the propeller, but not under reduced motion', () => {
