@@ -1,5 +1,5 @@
 // The address: `#/lesson/<id>?course=<n>`, so one link flies the same lesson
-// on the same rings. Parsing and building are pure; the router only reads the
+// on the same rings, or `#/about` for the About page. Parsing and building are pure; the router only reads the
 // hash, rewrites it with replaceState and listens for hashchange.
 
 import type { AlgorithmModule } from '../algorithms/index.ts'
@@ -10,14 +10,32 @@ export interface Route {
   readonly lesson?: string
   /** The course to load; undefined unless the route names a valid one. */
   readonly course?: number
+  /** True for `#/about`, whatever its query. */
+  readonly about?: true
 }
 
-/** Reads `#/lesson/<id>?course=<n>`; an unknown lesson or an invalid course is left out, so the stored one stays. */
+/** The path, without `#` and query, of `hash`. */
+function routePath(hash: string): string {
+  const text = hash.startsWith('#') ? hash.slice(1) : hash
+  const q = text.indexOf('?')
+  return q < 0 ? text : text.slice(0, q)
+}
+
+/** Whether `hash` is the About route. */
+function isAbout(hash: string): boolean {
+  return routePath(hash) === '/about'
+}
+
+/**
+ * Reads `#/lesson/<id>?course=<n>`; an unknown lesson or an invalid course is
+ * left out, so the stored one stays. `#/about` reads as `{ about: true }`.
+ */
 export function parseRoute(hash: string, modules: readonly AlgorithmModule[]): Route {
   const text = hash.startsWith('#') ? hash.slice(1) : hash
   const q = text.indexOf('?')
-  const path = q < 0 ? text : text.slice(0, q)
+  const path = routePath(hash)
   const query = q < 0 ? '' : text.slice(q + 1)
+  if (path === '/about') return { about: true }
   const match = /^\/lesson(?:\/(.*))?$/.exec(path)
   if (!match) return {}
 
@@ -64,8 +82,13 @@ export interface RouterWindow {
 export interface Router {
   /** The current hash. */
   read(): string
-  /** Replaces the hash with the lesson route, keeping the path and query; an equal hash is left alone. */
+  /**
+   * Replaces the hash with the lesson route, keeping the path and query; an
+   * equal hash is left alone, and so is the About route.
+   */
   write(lesson: string, course: number): void
+  /** Like `write`, but also replaces the About route: closing About lands on the lesson route. */
+  restore(lesson: string, course: number): void
   /** Calls `listener` with the new hash whenever the user changes it. */
   onChange(listener: (hash: string) => void): void
 }
@@ -78,14 +101,23 @@ export interface AddressTarget {
   loadCourse(course: number): void
   /** The lesson and course on screen, written back to the address. */
   current(): { readonly lesson: string; readonly course: number }
+  /** Shows (`true`) or hides (`false`) the About page. */
+  about(open: boolean): void
 }
 
 /**
- * An edited address selects its lesson and course outside a flight; during
- * one it is put back. Either way the address ends on the current route.
+ * The About route opens the About page and stays in the address. Any other
+ * address closes it; then an edited address selects its lesson and course
+ * outside a flight, and during one it is put back. Either way the address
+ * ends on the current route.
  */
 export function followAddress(router: Router, modules: readonly AlgorithmModule[], target: AddressTarget): void {
   router.onChange((hash) => {
+    if (isAbout(hash)) {
+      target.about(true)
+      return
+    }
+    target.about(false)
     if (!target.flying()) {
       const next = parseRoute(hash, modules)
       if (next.lesson !== undefined) target.selectLesson(next.lesson)
@@ -97,16 +129,22 @@ export function followAddress(router: Router, modules: readonly AlgorithmModule[
 }
 
 export function createRouter(win: RouterWindow): Router {
+  function replace(lesson: string, course: number): void {
+    const hash = lessonHash(lesson, course)
+    const { location } = win
+    if (location.hash === hash) return
+    win.history.replaceState(win.history.state, '', `${location.pathname}${location.search}${hash}`)
+  }
   return {
     read() {
       return win.location.hash
     },
     write(lesson, course) {
-      const hash = lessonHash(lesson, course)
-      const { location } = win
-      if (location.hash === hash) return
-      win.history.replaceState(win.history.state, '', `${location.pathname}${location.search}${hash}`)
+      // A lesson or course change behind the About page must not take the address off it.
+      if (isAbout(win.location.hash)) return
+      replace(lesson, course)
     },
+    restore: replace,
     onChange(listener) {
       win.addEventListener('hashchange', () => listener(win.location.hash))
     },

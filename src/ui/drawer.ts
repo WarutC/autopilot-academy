@@ -4,9 +4,6 @@
 // behind it is inert. Outside phone landscape the column sits in the page and
 // the drawer controls are not displayed.
 
-/** Phone landscape: phones on their side are 340–430 px tall; laptops and projectors are taller. */
-export const PHONE_LANDSCAPE = '(orientation: landscape) and (max-height: 540px)'
-
 export interface DrawerOptions {
   /** The card column; it needs an id for `aria-controls`. */
   readonly panel: HTMLElement

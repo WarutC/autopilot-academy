@@ -21,6 +21,25 @@ body {
   font: var(--type-title);
 }
 
+/* The logo and title link to the About page. */
+.site-brand {
+  display: inline-flex;
+  gap: 12px;
+  align-items: center;
+  min-height: 48px;
+  color: var(--ink);
+  text-decoration: none;
+  border-radius: 12px;
+}
+
+.site-logo {
+  display: block;
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+}
+
 .site-tagline {
   margin: 4px 0 0;
   color: var(--muted);
@@ -469,6 +488,8 @@ body {
 }
 
 /* Their display rules would otherwise override the hidden attribute. */
+#app[hidden],
+.about[hidden],
 .param-list[hidden],
 .btn-reset[hidden],
 .stick[hidden],
@@ -606,7 +627,9 @@ body {
 .stick-btn:focus-visible,
 .scene:focus-visible,
 .setpoint-input:focus-visible,
-.logbook-body:focus-visible {
+.logbook-body:focus-visible,
+.site-brand:focus-visible,
+.about-source-link:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
   box-shadow: 0 0 0 7px var(--focus-halo);
@@ -779,4 +802,105 @@ body {
 
 .pole-readout-lookahead {
   margin: 0;
+}
+
+/* The About link at the foot of the card column. */
+.about-link {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  text-decoration: none;
+}
+
+/* The About page, shown in place of the flight. */
+.about {
+  box-sizing: border-box;
+  display: block;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+/* The heading takes focus on open only to start reading there; it is not a control. */
+.about-card .card-header:focus {
+  outline: none;
+}
+
+.about-body {
+  display: grid;
+  gap: 16px;
+}
+
+.about-intro,
+.about-source,
+.about-license {
+  margin: 0;
+  font: var(--type-body);
+}
+
+.about-credits {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.about-credit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.about-credit-label {
+  margin: 0;
+  color: var(--muted);
+  font: var(--type-label);
+}
+
+.about-credit-name {
+  margin: 0;
+  font: var(--type-heading);
+}
+
+.about-avatar {
+  display: block;
+  width: 96px;
+  height: 96px;
+  border: 2px solid var(--strong);
+  border-radius: 50%;
+}
+
+/* The logo keeps its own colors on a white plate in both themes. */
+.about-logo-plate {
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 12px 16px;
+  background: #FFFFFF;
+  border-radius: 12px;
+}
+
+.about-logo {
+  display: block;
+  width: 220px;
+  max-width: 100%;
+  height: auto;
+}
+
+.about-source-link {
+  color: var(--ink);
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+  border-radius: 4px;
+}
+
+.about-close {
+  justify-self: start;
+}
+
+/* Phone portrait: the credits stack in one column. */
+@media (max-width: 599px) {
+  .about-credits {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

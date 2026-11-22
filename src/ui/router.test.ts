@@ -37,8 +37,14 @@ describe('parseRoute', () => {
   })
 
   it('applies nothing for other routes, whatever their query', () => {
-    for (const hash of ['', '#', '#/', '#/about', '#/foo', '#/about?course=5', '#/lessons/pid', 'lesson/pid']) {
+    for (const hash of ['', '#', '#/', '#/abouts', '#/foo', '#/about/x', '#/lessons/pid', 'lesson/pid']) {
       expect(parseRoute(hash, modules)).toEqual({})
+    }
+  })
+
+  it('reads the About route, whatever its query', () => {
+    for (const hash of ['#/about', '#/about?course=5', '#/about?lesson=pid', '/about']) {
+      expect(parseRoute(hash, modules)).toEqual({ about: true })
     }
   })
 })
@@ -100,7 +106,7 @@ describe('createRouter', () => {
   })
 
   it('writes the lesson route and keeps the path and query', () => {
-    const { win, calls } = fakeWindow('#/about')
+    const { win, calls } = fakeWindow('#/foo')
     createRouter(win).write('pid', 202)
     expect(calls).toEqual(['/autopilot-academy/?fixture#/lesson/pid?course=202'])
   })
@@ -108,6 +114,28 @@ describe('createRouter', () => {
   it('skips a write when the hash already matches', () => {
     const { win, calls } = fakeWindow('#/lesson/pid?course=202')
     createRouter(win).write('pid', 202)
+    expect(calls).toEqual([])
+  })
+
+  it('leaves the About route alone on a write', () => {
+    for (const hash of ['#/about', '#/about?course=5']) {
+      const { win, calls, location } = fakeWindow(hash)
+      createRouter(win).write('pid', 202)
+      expect(calls).toEqual([])
+      expect(location.hash).toBe(hash)
+    }
+  })
+
+  it('restores the lesson route over the About route', () => {
+    const { win, calls, location } = fakeWindow('#/about')
+    createRouter(win).restore('pid', 101)
+    expect(calls).toEqual(['/autopilot-academy/?fixture#/lesson/pid?course=101'])
+    expect(location.hash).toBe('#/lesson/pid?course=101')
+  })
+
+  it('skips a restore when the hash already matches', () => {
+    const { win, calls } = fakeWindow('#/lesson/pid?course=101')
+    createRouter(win).restore('pid', 101)
     expect(calls).toEqual([])
   })
 
@@ -145,6 +173,9 @@ describe('followAddress', () => {
         state.course = course
       },
       current: () => ({ ...state }),
+      about(open) {
+        log.push(`about ${open}`)
+      },
     })
     fake.location.hash = hash
     fake.fire()
@@ -153,7 +184,7 @@ describe('followAddress', () => {
 
   it('selects the lesson and loads the course outside a flight, then writes them back', () => {
     const { log, calls, location } = follow('#/lesson/manual?course=9', false)
-    expect(log).toEqual(['lesson manual', 'course 9', 'write manual 9'])
+    expect(log).toEqual(['about false', 'lesson manual', 'course 9', 'write manual 9'])
     // The address already names the current route, so nothing is rewritten.
     expect(calls).toEqual([])
     expect(location.hash).toBe('#/lesson/manual?course=9')
@@ -161,29 +192,47 @@ describe('followAddress', () => {
 
   it('selects and loads nothing during a flight and puts the current route back', () => {
     const { log, calls, location } = follow('#/lesson/manual?course=9', true)
-    expect(log).toEqual(['write pid 101'])
+    expect(log).toEqual(['about false', 'write pid 101'])
     expect(calls).toEqual(['/autopilot-academy/?fixture#/lesson/pid?course=101'])
     expect(location.hash).toBe('#/lesson/pid?course=101')
   })
 
   it('ignores an unknown lesson and an invalid course and writes the current route back', () => {
     const { log, calls, location } = follow('#/lesson/nope?course=0', false)
-    expect(log).toEqual(['write pid 101'])
+    expect(log).toEqual(['about false', 'write pid 101'])
     expect(calls).toEqual(['/autopilot-academy/?fixture#/lesson/pid?course=101'])
     expect(location.hash).toBe('#/lesson/pid?course=101')
   })
 
   it('selects only the lesson when the course is invalid', () => {
     const { log, calls, location } = follow('#/lesson/manual?course=0', false)
-    expect(log).toEqual(['lesson manual', 'write manual 101'])
+    expect(log).toEqual(['about false', 'lesson manual', 'write manual 101'])
     expect(calls).toEqual(['/autopilot-academy/?fixture#/lesson/manual?course=101'])
     expect(location.hash).toBe('#/lesson/manual?course=101')
   })
 
   it('loads only the course when the lesson is unknown', () => {
     const { log, calls, location } = follow('#/lesson/nope?course=7', false)
-    expect(log).toEqual(['course 7', 'write pid 7'])
+    expect(log).toEqual(['about false', 'course 7', 'write pid 7'])
     expect(calls).toEqual(['/autopilot-academy/?fixture#/lesson/pid?course=7'])
     expect(location.hash).toBe('#/lesson/pid?course=7')
+  })
+  it.each([false, true])('opens About on the About route without a rewrite (flying: %s)', (flying) => {
+    const { log, calls, location } = follow('#/about', flying)
+    expect(log).toEqual(['about true'])
+    expect(calls).toEqual([])
+    expect(location.hash).toBe('#/about')
+  })
+
+  it('opens About on the About route with a query and changes nothing', () => {
+    const { log, calls, location } = follow('#/about?course=5', false)
+    expect(log).toEqual(['about true'])
+    expect(calls).toEqual([])
+    expect(location.hash).toBe('#/about?course=5')
+  })
+
+  it('closes About first on a lesson route, then follows it', () => {
+    const { log } = follow('#/lesson/manual?course=9', false)
+    expect(log[0]).toBe('about false')
   })
 })
