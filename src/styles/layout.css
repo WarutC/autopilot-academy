@@ -9,6 +9,38 @@ body {
   padding: 16px;
 }
 
+/* The page header, shown on wide screens only. */
+.site-header {
+  padding: 16px 16px 0;
+}
+
+.site-title {
+  margin: 0;
+  color: var(--ink);
+  font: var(--type-title);
+}
+
+.site-tagline {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font: var(--type-body);
+}
+
+/* Below the wide layout the header is hidden but the h1 stays for screen readers. */
+@media (max-width: 960px) {
+  .site-header {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
 .scene {
   display: block;
   box-sizing: border-box;
@@ -52,7 +84,7 @@ body {
 }
 
 .btn {
-  padding: 8px 24px;
+  padding: 8px 16px;
   background: var(--panel);
   border: 2px solid var(--strong);
   border-radius: 9999px;
@@ -95,10 +127,19 @@ body {
   color: var(--chip-on-ink);
 }
 
-.btn:focus-visible,
-.seg-btn:focus-visible {
+.btn:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
+  box-shadow: 0 0 0 7px var(--focus-halo);
+}
+
+/* Lift a focused segment so its neighbours do not paint over the ring. */
+.seg-btn:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 7px var(--focus-halo);
 }
 
 /* The Course number field and its visible label. */
@@ -112,12 +153,12 @@ body {
 
 .course-field {
   box-sizing: border-box;
-  width: 5.5em;
+  width: 4.5em;
   min-height: 48px;
   padding: 8px 12px;
   background: var(--field);
   color: var(--ink);
-  border: 2px solid var(--line);
+  border: 2px solid var(--strong);
   border-radius: 8px;
   font: var(--type-number);
   font-variant-numeric: tabular-nums;
@@ -131,12 +172,7 @@ body {
 .course-field:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
-}
-
-/* Lift a focused segment so its neighbours do not paint over the ring. */
-.seg-btn:focus-visible {
-  position: relative;
-  z-index: 1;
+  box-shadow: 0 0 0 7px var(--focus-halo);
 }
 
 /* The scene and the banner over it. */
@@ -268,7 +304,7 @@ body {
   padding: 8px 12px;
   background: var(--field);
   color: var(--ink);
-  border: 2px solid var(--line);
+  border: 2px solid var(--strong);
   border-radius: 8px;
   font: var(--type-number);
   font-variant-numeric: tabular-nums;
@@ -302,6 +338,7 @@ body {
 .param-check:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
+  box-shadow: 0 0 0 7px var(--focus-halo);
 }
 
 .btn-reset {
@@ -333,7 +370,7 @@ body {
   padding: 8px;
   background: var(--field);
   color: var(--ink);
-  border: 2px solid var(--line);
+  border: 2px solid var(--strong);
   border-radius: 12px;
   text-align: left;
   cursor: pointer;
@@ -369,6 +406,7 @@ body {
 .lesson-chip:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
+  box-shadow: 0 0 0 7px var(--focus-halo);
 }
 
 /* Their display rules would otherwise override the hidden attribute. */
@@ -380,14 +418,21 @@ body {
   display: none;
 }
 
-/* Stick buttons over the scene's right edge, in the Manual lesson. */
+/*
+ * Stick buttons over the scene's right edge, in the Manual lesson. They fill
+ * the space above the score badge (16 px inset + 2 px scene border + 92 px
+ * badge + 14 px gap). On a short scene they start at the top and overflow
+ * downward. The empty area lets presses through to the scene.
+ */
 .stick {
   position: absolute;
-  top: 50%;
+  top: 16px;
+  bottom: 124px;
   right: 16px;
   display: grid;
   gap: 16px;
-  transform: translateY(-50%);
+  align-content: safe center;
+  pointer-events: none;
 }
 
 .stick-btn {
@@ -403,6 +448,7 @@ body {
   font: var(--type-heading);
   cursor: pointer;
   touch-action: none;
+  pointer-events: auto;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
@@ -416,11 +462,13 @@ body {
 .stick-btn:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
+  box-shadow: 0 0 0 7px var(--focus-halo);
 }
 
 .scene:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
+  box-shadow: 0 0 0 7px var(--focus-halo);
 }
 
 /*
@@ -499,5 +547,6 @@ body {
 .setpoint-input:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
+  box-shadow: 0 0 0 7px var(--focus-halo);
   border-radius: 8px;
 }
