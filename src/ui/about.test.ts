@@ -21,12 +21,14 @@ type Listener = (event: FakeEvent) => void
 interface FakeEvent {
   key?: string
   defaultPrevented: boolean
+  isComposing?: boolean
   preventDefault(): void
 }
 
-const event = (key?: string): FakeEvent => ({
+const event = (key?: string, extra: Partial<FakeEvent> = {}): FakeEvent => ({
   key,
   defaultPrevented: false,
+  ...extra,
   preventDefault() {
     this.defaultPrevented = true
   },
@@ -45,6 +47,7 @@ class FakeTarget {
 
 class FakeDocument extends FakeTarget {
   activeElement: FakeElement | null = null
+  title = 'Autopilot Academy'
   createElement(tag: string): FakeElement {
     return new FakeElement(this, tag)
   }
@@ -65,6 +68,8 @@ class FakeElement extends FakeTarget {
   target = ''
   rel = ''
   isConnected = true
+  /** Whether the element shows on screen. */
+  visible = true
   readonly children: FakeElement[] = []
   readonly attrs = new Map<string, string>()
   readonly doc: FakeDocument
@@ -74,8 +79,11 @@ class FakeElement extends FakeTarget {
     this.doc = doc
     this.tag = tag
   }
-  append(...items: FakeElement[]): void {
-    this.children.push(...items)
+  append(...items: (FakeElement | string)[]): void {
+    for (const item of items) {
+      if (typeof item !== 'string') this.children.push(item)
+      else if (item.trim() !== '') throw new Error('text nodes are not modelled')
+    }
   }
   setAttribute(name: string, value: string): void {
     this.attrs.set(name, value)
@@ -106,7 +114,7 @@ class FakeElement extends FakeTarget {
 function setup() {
   const doc = new FakeDocument()
   const onClose = vi.fn()
-  const about = createAbout(doc as unknown as Document, { onClose })
+  const about = createAbout(doc as unknown as Document, { onClose, isVisible: (e) => (e as unknown as FakeElement).visible })
   const element = about.element as unknown as FakeElement
   return { doc, onClose, about, element }
 }
@@ -146,7 +154,7 @@ describe('createAbout', () => {
     const avatar = element.find('about-avatar')
     expect([avatar.tag, avatar.src, avatar.alt, avatar.width, avatar.height]).toEqual([
       'img',
-      '/about/whale-avatar.png',
+      `${import.meta.env.BASE_URL}about/whale-avatar.png`,
       "Warut.C's GitHub avatar, a whale",
       96,
       96,
@@ -154,7 +162,7 @@ describe('createAbout', () => {
     expect([AVATAR_SRC, AVATAR_ALT]).toEqual([avatar.src, avatar.alt])
     const plate = element.find('about-logo-plate')
     const logo = plate.children[0]!
-    expect([logo.tag, logo.src, logo.alt]).toEqual(['img', '/about/logo-ruk-com.svg', 'Ruk-Com Cloud logo'])
+    expect([logo.tag, logo.src, logo.alt]).toEqual(['img', `${import.meta.env.BASE_URL}about/logo-ruk-com.svg`, 'Ruk-Com Cloud logo'])
     expect([LOGO_SRC, LOGO_ALT]).toEqual([logo.src, logo.alt])
   })
 
@@ -166,6 +174,16 @@ describe('createAbout', () => {
     expect([SOURCE_URL, SOURCE_TEXT]).toEqual([link.href, link.textContent])
     expect(link.target).toBe('_blank')
     expect(link.rel).toBe('noopener noreferrer')
+    // Screen readers hear that the link opens a new tab; sighted users see only the address.
+    const note = link.children[0]!
+    expect([note.tag, note.className, note.textContent]).toEqual(['span', 'visually-hidden', '(opens in a new tab)'])
+    expect(link.text()).toBe('github.com/WarutC/autopilot-academy (opens in a new tab)')
+  })
+
+  it('builds the image paths from the base the app is served from', () => {
+    expect(import.meta.env.BASE_URL.endsWith('/')).toBe(true)
+    expect(AVATAR_SRC.startsWith(import.meta.env.BASE_URL)).toBe(true)
+    expect(LOGO_SRC.startsWith(import.meta.env.BASE_URL)).toBe(true)
   })
 
   it('opens shown with focus on its heading', () => {
@@ -203,6 +221,24 @@ describe('createAbout', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('ignores an Escape already handled or ending a composition', () => {
+    const { doc, onClose, about } = setup()
+    about.open(null)
+    doc.fire('keydown', event('Escape', { defaultPrevented: true }))
+    doc.fire('keydown', event('Escape', { isComposing: true }))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('titles the document while open and restores the title on close', () => {
+    const { doc, about } = setup()
+    doc.title = 'Autopilot Academy'
+    about.open(null)
+    expect(doc.title).toBe('About · Autopilot Academy')
+    about.open(null)
+    about.close()
+    expect(doc.title).toBe('Autopilot Academy')
+  })
+
   it('closes hidden and returns focus to the opener', () => {
     const { doc, about, element } = setup()
     const opener = doc.createElement('a')
@@ -234,6 +270,30 @@ describe('createAbout', () => {
     about.open(gone as unknown as HTMLElement)
     about.close()
     expect(doc.activeElement).not.toBe(gone)
+  })
+
+  it('moves focus to the first visible fallback when the opener is missing, gone or hidden', () => {
+    const { doc, about } = setup()
+    const hiddenLink = doc.createElement('a')
+    hiddenLink.visible = false
+    const link = doc.createElement('a')
+    const fallbacks = [null, hiddenLink, link] as unknown as HTMLElement[]
+
+    about.open(null)
+    about.close(fallbacks)
+    expect(doc.activeElement).toBe(link)
+
+    const toggle = doc.createElement('button')
+    about.open(toggle as unknown as HTMLElement)
+    toggle.visible = false
+    about.close(fallbacks)
+    expect(doc.activeElement).toBe(link)
+
+    const gone = doc.createElement('a')
+    about.open(gone as unknown as HTMLElement)
+    gone.isConnected = false
+    about.close(fallbacks)
+    expect(doc.activeElement).toBe(link)
   })
 
   it('ignores a close while already closed', () => {

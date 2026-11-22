@@ -2,34 +2,56 @@
 // lives and its license. It is shown in place of the flight; Close or Escape
 // asks the caller to return to it.
 
+/** Where the app is served from, ending in `/`, so the bundled images load under any base path. */
+const BASE = import.meta.env.BASE_URL
+
 export const ABOUT_TITLE = 'About'
 export const ABOUT_INTRO = 'Autopilot Academy is a cartoon flight lesson for control engineering classes.'
 export const MADE_BY = 'Made by'
 export const AUTHOR_NAME = 'Warut.C'
-export const AVATAR_SRC = '/about/whale-avatar.png'
+export const AVATAR_SRC = `${BASE}about/whale-avatar.png`
 export const AVATAR_ALT = "Warut.C's GitHub avatar, a whale"
 export const WITH = 'With'
 export const COMPANY_NAME = 'Ruk-Com Co., Ltd.'
-export const LOGO_SRC = '/about/logo-ruk-com.svg'
+export const LOGO_SRC = `${BASE}about/logo-ruk-com.svg`
 export const LOGO_ALT = 'Ruk-Com Cloud logo'
 export const SOURCE_URL = 'https://github.com/WarutC/autopilot-academy'
 export const SOURCE_TEXT = 'github.com/WarutC/autopilot-academy'
+export const NEW_TAB_TEXT = '(opens in a new tab)'
 export const LICENSE_TEXT = 'Free and open source under the MIT License.'
 export const CLOSE_TEXT = 'Close'
+/** The document title while About is open. */
+export const ABOUT_DOC_TITLE = 'About · Autopilot Academy'
 
 export interface AboutOptions {
   /** Called on Close or Escape; the caller closes the page and restores the address. */
   onClose(): void
+  /** Whether `element` shows on screen, so it can take focus; defaults to `shown`. */
+  isVisible?(element: HTMLElement): boolean
+}
+
+/**
+ * Whether `element` is rendered, not `visibility: hidden` (the closed drawer)
+ * and bigger than the 1 px box that visually hides the header on compact screens.
+ */
+function shown(element: HTMLElement): boolean {
+  if (typeof element.checkVisibility === 'function' && !element.checkVisibility({ visibilityProperty: true })) return false
+  const box = element.getBoundingClientRect()
+  return box.width > 1 && box.height > 1
 }
 
 export interface About {
   /** The page, hidden until opened; the caller inserts it after the flight. */
   readonly element: HTMLElement
   readonly isOpen: boolean
-  /** Shows the page and focuses its heading; `opener` gets focus back on close. */
+  /** Shows the page, titles the document and focuses the heading; `opener` gets focus back on close. */
   open(opener: HTMLElement | null): void
-  /** Hides the page and returns focus to the opener if it is still in the page. */
-  close(): void
+  /**
+   * Hides the page and restores the document title. Focus returns to the
+   * opener if it is still in the page and visible, else to the first of
+   * `fallbacks` that is, so it never stays on the hidden heading.
+   */
+  close(fallbacks?: readonly (HTMLElement | null)[]): void
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -53,7 +75,7 @@ function image(doc: Document, className: string, src: string, alt: string, width
   return img
 }
 
-export function createAbout(doc: Document, { onClose }: AboutOptions): About {
+export function createAbout(doc: Document, { onClose, isVisible = shown }: AboutOptions): About {
   const element = el(doc, 'main', 'about')
   element.hidden = true
   element.setAttribute('aria-labelledby', 'about-title')
@@ -87,6 +109,7 @@ export function createAbout(doc: Document, { onClose }: AboutOptions): About {
   link.href = SOURCE_URL
   link.target = '_blank'
   link.rel = 'noopener noreferrer'
+  link.append(' ', el(doc, 'span', 'visually-hidden', NEW_TAB_TEXT))
   sourceLine.append(link)
 
   const license = el(doc, 'p', 'about-license', LICENSE_TEXT)
@@ -101,9 +124,10 @@ export function createAbout(doc: Document, { onClose }: AboutOptions): About {
 
   let isOpen = false
   let opener: HTMLElement | null = null
+  let pageTitle = ''
 
   doc.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape' || !isOpen) return
+    if (event.key !== 'Escape' || !isOpen || event.defaultPrevented || event.isComposing) return
     event.preventDefault()
     onClose()
   })
@@ -114,18 +138,23 @@ export function createAbout(doc: Document, { onClose }: AboutOptions): About {
       return isOpen
     },
     open(from) {
-      if (!isOpen) opener = from
+      if (!isOpen) {
+        opener = from
+        pageTitle = doc.title
+        doc.title = ABOUT_DOC_TITLE
+      }
       isOpen = true
       element.hidden = false
       title.focus()
     },
-    close() {
+    close(fallbacks = []) {
       if (!isOpen) return
       isOpen = false
       element.hidden = true
-      const back = opener
+      doc.title = pageTitle
+      const back = [opener, ...fallbacks].find((e) => e?.isConnected && isVisible(e))
       opener = null
-      if (back?.isConnected) back.focus()
+      back?.focus()
     },
   }
 }
