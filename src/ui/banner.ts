@@ -1,7 +1,9 @@
 // The banner over the scene: Ready for takeoff, New course loaded, Paused,
 // Crashed or Mission complete. A persistent live region announces it; the
-// visible box inside it is added or removed, and never takes input.
+// visible box inside it is added or removed, and never takes input. The end
+// banners show the Penguin beside the title, cheering or shrugging.
 
+import { createMascot } from '../render/mascots.ts'
 import { ringsPassed, type PlaneResult } from '../sim/scoring.ts'
 import type { Phase } from './flight.ts'
 
@@ -10,6 +12,8 @@ export interface BannerContent {
   readonly body: string
   /** A second line under the body, such as "Retuned". */
   readonly note?: string
+  /** The Penguin beside the title: cheering on Mission complete, shrugging on Crashed. */
+  readonly mascot?: 'cheer' | 'shrug'
 }
 
 /**
@@ -39,6 +43,7 @@ export function bannerContent(
       title: 'Crashed',
       body: `The aircraft left the safe altitude band. Retune and fly again.${wingmanText(wingman)}`,
       ...note,
+      mascot: 'shrug',
     }
   }
   if (result.status === 'finished') {
@@ -47,6 +52,7 @@ export function bannerContent(
       title: 'Mission complete',
       body: `${result.points.toFixed(1)} points, ${passed} of ${result.ringsTotal} rings.${wingmanText(wingman)}`,
       ...note,
+      mascot: 'cheer',
     }
   }
   return undefined
@@ -79,7 +85,13 @@ export function createBanner(doc: Document): Banner {
   return {
     element,
     update(content) {
-      if (content?.title === shown?.title && content?.body === shown?.body && content?.note === shown?.note) return
+      if (
+        content?.title === shown?.title &&
+        content?.body === shown?.body &&
+        content?.note === shown?.note &&
+        content?.mascot === shown?.mascot
+      )
+        return
       shown = content
       if (!content) {
         element.replaceChildren()
@@ -90,10 +102,15 @@ export function createBanner(doc: Document): Banner {
       const title = doc.createElement('h2')
       title.className = 'banner-title'
       title.textContent = content.title
+      // The mascot is aria-hidden and has no text, so the region announces the banner text only.
+      const head = doc.createElement('div')
+      head.className = 'banner-head'
+      if (content.mascot) head.append(createMascot(doc, content.mascot))
+      head.append(title)
       const body = doc.createElement('p')
       body.className = 'banner-body'
       body.textContent = content.body
-      box.append(title, body)
+      box.append(head, body)
       if (content.note) {
         const note = doc.createElement('p')
         note.className = 'banner-note'

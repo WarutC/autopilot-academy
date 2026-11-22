@@ -78,6 +78,7 @@ describe('bannerContent', () => {
     expect(bannerContent('ended', result('finished', 74.2, 8, 10))).toEqual({
       title: 'Mission complete',
       body: '74.2 points, 8 of 10 rings.',
+      mascot: 'cheer',
     })
   })
 
@@ -85,6 +86,7 @@ describe('bannerContent', () => {
     expect(bannerContent('ended', result('crashed', 12, 2))).toEqual({
       title: 'Crashed',
       body: 'The aircraft left the safe altitude band. Retune and fly again.',
+      mascot: 'shrug',
     })
   })
 
@@ -94,6 +96,7 @@ describe('bannerContent', () => {
       title: 'Mission complete',
       body: '74.2 points, 8 of 10 rings.',
       note: 'Retuned',
+      mascot: 'cheer',
     })
     expect(bannerContent('ended', retuned('crashed'))?.note).toBe('Retuned')
     expect(bannerContent('ended', result('finished', 74.2, 8))).not.toHaveProperty('note')
@@ -114,6 +117,7 @@ describe('bannerContent: wingman', () => {
     expect(bannerContent('ended', result('finished', 74.2, 8, 10), undefined, wingman('finished', 61))).toEqual({
       title: 'Mission complete',
       body: '74.2 points, 8 of 10 rings. Wingman P: 61.0 points.',
+      mascot: 'cheer',
     })
   })
 
@@ -127,12 +131,14 @@ describe('bannerContent: wingman', () => {
     expect(bannerContent('ended', result('crashed', 12, 2), undefined, wingman('finished', 61))).toEqual({
       title: 'Crashed',
       body: 'The aircraft left the safe altitude band. Retune and fly again. Wingman P: 61.0 points.',
+      mascot: 'shrug',
     })
     const retuned = { ...result('crashed', 12, 2), retuned: true }
     expect(bannerContent('ended', retuned, undefined, wingman('crashed', 4))).toEqual({
       title: 'Crashed',
       body: 'The aircraft left the safe altitude band. Retune and fly again. Wingman P crashed with 4.0 points.',
       note: 'Retuned',
+      mascot: 'shrug',
     })
   })
 
@@ -186,6 +192,7 @@ describe('banner end to end', () => {
     expect(shown(f)).toEqual({
       title: 'Crashed',
       body: 'The aircraft left the safe altitude band. Retune and fly again.',
+      mascot: 'shrug',
     })
   })
 })
@@ -197,10 +204,12 @@ class FakeElement {
   children: FakeElement[] = []
   private text = ''
   readonly tagName: string
+  readonly ns: string | undefined
   private readonly log: string[]
-  constructor(tagName: string, log: string[]) {
+  constructor(tagName: string, log: string[], ns?: string) {
     this.tagName = tagName
     this.log = log
+    this.ns = ns
   }
   get textContent(): string {
     return this.text + this.children.map((c) => c.textContent).join('')
@@ -211,6 +220,7 @@ class FakeElement {
   }
   setAttribute(name: string, value: string): void {
     this.attrs.set(name, value)
+    if (name === 'class') this.className = value
   }
   append(...nodes: FakeElement[]): void {
     this.log.push(`append ${this.tagName}`)
@@ -224,7 +234,10 @@ class FakeElement {
 
 function fakeDocument(): { doc: Document; log: string[] } {
   const log: string[] = []
-  const doc = { createElement: (tag: string) => new FakeElement(tag, log) }
+  const doc = {
+    createElement: (tag: string) => new FakeElement(tag, log),
+    createElementNS: (ns: string, tag: string) => new FakeElement(tag, log, ns),
+  }
   return { doc: doc as unknown as Document, log }
 }
 
@@ -262,7 +275,7 @@ describe('createBanner', () => {
     banner.update({ title: 'Mission complete', body: '74.2 points, 8 of 10 rings.', note: 'Retuned' })
     expect(log.length).toBeGreaterThan(writes)
     const box = region.children[0]!
-    expect(box.children.map((c) => c.className)).toEqual(['banner-title', 'banner-body', 'banner-note'])
+    expect(box.children.map((c) => c.className)).toEqual(['banner-head', 'banner-body', 'banner-note'])
     expect(box.children[2]!.textContent).toBe('Retuned')
     const after = log.length
     banner.update({ title: 'Mission complete', body: '74.2 points, 8 of 10 rings.', note: 'Retuned' })
@@ -280,5 +293,68 @@ describe('createBanner', () => {
     const writes = log.length
     banner.update(undefined)
     expect(log.length).toBe(writes)
+  })
+
+  it('puts the Penguin before the title in the banner head, hidden from the live text', () => {
+    const { doc } = fakeDocument()
+    const banner = createBanner(doc)
+    const region = banner.element as unknown as FakeElement
+    banner.update({ title: 'Mission complete', body: '74.2 points, 8 of 10 rings.', mascot: 'cheer' })
+    const box = region.children[0]!
+    expect(box.children.map((c) => c.className)).toEqual(['banner-head', 'banner-body'])
+    const [svg, title] = box.children[0]!.children
+    expect(svg!.tagName).toBe('svg')
+    expect(svg!.ns).toBe('http://www.w3.org/2000/svg')
+    expect(svg!.className).toBe('mascot mascot-cheer')
+    expect(svg!.attrs.get('aria-hidden')).toBe('true')
+    expect(title!.tagName).toBe('h2')
+    expect(title!.className).toBe('banner-title')
+    expect(region.textContent).toBe('Mission complete74.2 points, 8 of 10 rings.')
+  })
+
+  it('rewrites once when only the mascot changes', () => {
+    const { doc, log } = fakeDocument()
+    const banner = createBanner(doc)
+    const region = banner.element as unknown as FakeElement
+    const content = { title: 'T', body: 'B' }
+    banner.update({ ...content, mascot: 'cheer' })
+    const writes = log.length
+    banner.update({ ...content, mascot: 'shrug' })
+    expect(log.length).toBeGreaterThan(writes)
+    expect(region.children[0]!.children[0]!.children[0]!.className).toBe('mascot mascot-shrug')
+    const after = log.length
+    banner.update({ ...content, mascot: 'shrug' })
+    expect(log.length).toBe(after)
+  })
+
+  it('holds only the title in the head without a mascot', () => {
+    const { doc } = fakeDocument()
+    const banner = createBanner(doc)
+    banner.update(bannerContent('paused', result('flying')))
+    const head = (banner.element as unknown as FakeElement).children[0]!.children[0]!
+    expect(head.className).toBe('banner-head')
+    expect(head.children.map((c) => c.tagName)).toEqual(['h2'])
+  })
+})
+
+describe('bannerContent: mascot', () => {
+  const w = { name: 'P', result: { ...result('finished', 61), lesson: 'p' } }
+  const retuned = (status: PlaneResult['status']) => ({ ...result(status, 74.2, 8), retuned: true })
+
+  it('cheers on Mission complete and shrugs on Crashed, with a wingman and when retuned', () => {
+    expect(bannerContent('ended', result('finished', 74.2, 8))?.mascot).toBe('cheer')
+    expect(bannerContent('ended', result('finished', 74.2, 8), undefined, w)?.mascot).toBe('cheer')
+    expect(bannerContent('ended', retuned('finished'))?.mascot).toBe('cheer')
+    expect(bannerContent('ended', result('crashed'))?.mascot).toBe('shrug')
+    expect(bannerContent('ended', result('crashed'), undefined, w)?.mascot).toBe('shrug')
+    expect(bannerContent('ended', retuned('crashed'))?.mascot).toBe('shrug')
+  })
+
+  it('shows no mascot on the other banners', () => {
+    expect(bannerContent('ready', undefined)?.mascot).toBeUndefined()
+    expect(bannerContent('ready', undefined, 555)?.mascot).toBeUndefined()
+    expect(bannerContent('paused', result('flying'))?.mascot).toBeUndefined()
+    expect(bannerContent('running', result('flying'))).toBeUndefined()
+    expect(bannerContent('ended', undefined)).toBeUndefined()
   })
 })

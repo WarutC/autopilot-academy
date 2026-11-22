@@ -282,6 +282,22 @@ body {
   text-align: center;
 }
 
+/* The Penguin, when shown, beside the banner title. */
+.banner-head {
+  display: flex;
+  width: fit-content;
+  margin-inline: auto;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* Pixel mascots keep their own size: one sprite pixel to 3 CSS px. */
+.mascot {
+  flex: none;
+  display: block;
+}
+
 .banner-title {
   margin: 0;
   font: var(--type-heading);
@@ -348,8 +364,18 @@ body {
   font: var(--type-heading);
 }
 
-.lesson {
+/* The Whale beside the lesson text; the row keeps the lesson's spacing. */
+.lesson-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
   margin: 8px 0 16px;
+}
+
+.lesson {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
   font: var(--type-body);
 }
 
