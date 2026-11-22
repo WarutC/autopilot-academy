@@ -8,16 +8,19 @@ import { PLANT, SETPOINT_MAX, SETPOINT_MIN } from './sim/plant.ts'
 import type { Run, RunPlayer } from './sim/run.ts'
 import type { PlaneResult } from './sim/scoring.ts'
 import type { FlightMode, Snapshot } from './sim/types.ts'
+import { createAbout } from './ui/about.ts'
+import { createAboutController } from './ui/about-controller.ts'
 import { watchAutoPause } from './ui/auto-pause.ts'
 import { createAutopilotCard } from './ui/autopilot-card.ts'
 import { bannerContent, createBanner } from './ui/banner.ts'
 import { createConditionsCard } from './ui/conditions-card.ts'
-import { createDrawer, PHONE_LANDSCAPE } from './ui/drawer.ts'
+import { createDrawer } from './ui/drawer.ts'
 import { createFlightSettings } from './ui/flight-settings.ts'
 import { createFlight, inFlight, pauseForInterruption, playerRuns, type Phase } from './ui/flight.ts'
 import { createStick, gameKey, typingTarget } from './ui/input.ts'
 import { createLogbookCard } from './ui/logbook-card.ts'
 import { createEndedRunStep } from './ui/logbook.ts'
+import { COMPACT, PHONE_LANDSCAPE } from './ui/media.ts'
 import { createModeSwitch } from './ui/mode-switch.ts'
 import { createPoleReadout, lessonAnalysis } from './ui/pole-readout.ts'
 import { browserStorage, validCourse } from './ui/persistence.ts'
@@ -42,7 +45,7 @@ const banner = createBanner(document)
 const stage = document.createElement('div')
 stage.className = 'stage'
 stage.append(canvas, banner.element)
-const app = document.querySelector('#app')!
+const app = document.querySelector<HTMLElement>('#app')!
 const ctx = canvas.getContext('2d')!
 
 // Wide screens: the flight on the left, the cards in a 380 px column on the right.
@@ -273,10 +276,45 @@ side.prepend(drawer.close)
 app.append(drawer.scrim)
 
 // On a phone a tap on the recorder expands it to the full viewport width.
-const phoneQuery = `(width <= 960px), ${PHONE_LANDSCAPE}`
 recorderCanvas.addEventListener('click', () => {
-  if (matchMedia(phoneQuery).matches) recorderCard.classList.toggle('expanded')
+  if (matchMedia(COMPACT).matches) recorderCard.classList.toggle('expanded')
 })
+
+/** The About link at the foot of the card column; the header logo and title link there too. */
+const aboutLink = document.createElement('a')
+aboutLink.className = 'btn about-link'
+aboutLink.href = '#/about'
+aboutLink.textContent = 'About'
+side.append(aboutLink)
+
+/** The About page, shown in place of the flight; Close or Escape lands back on the lesson route. */
+const about = createAbout(document, { onClose: () => aboutController.dismiss() })
+app.after(about.element)
+
+// The header is clipped on compact screens, so its link leaves the tab order there.
+const siteBrand = document.querySelector<HTMLAnchorElement>('.site-brand')
+
+const aboutController = createAboutController({
+  about,
+  drawer,
+  app,
+  router,
+  history,
+  pause: releaseAndPause,
+  // A resize while About showed left the canvases unpainted.
+  redraw: requestReadout,
+  current: () => ({ lesson: store.lesson, course: store.course }),
+  focused: () => {
+    const focused = document.activeElement as HTMLElement | null
+    return focused && focused !== document.body ? focused : null
+  },
+  // The About link, then Cards in phone landscape where the link is in the closed drawer, then the header.
+  fallbacks: () => [aboutLink, drawer.toggle, siteBrand],
+})
+for (const link of [aboutLink, siteBrand]) link?.addEventListener('click', (event) => aboutController.linkClicked(link, event))
+function syncBrandFocus(compact: boolean): void {
+  if (siteBrand) siteBrand.tabIndex = compact ? -1 : 0
+}
 
 const mirror = createScoreMirror(document)
 main.append(mirror.element)
@@ -350,7 +388,8 @@ function frame(time: number): void {
   lastTime = time
   const stepped = flight.advance(elapsed) > 0
   syncUi()
-  if (redraw.takeDraw(stepped)) draw()
+  // The flight is hidden behind About, so a pending draw waits until it is shown again.
+  if (!about.isOpen && redraw.takeDraw(stepped)) draw()
   requestAnimationFrame(frame)
 }
 
@@ -407,8 +446,11 @@ function start(): void {
   const landscape = matchMedia(PHONE_LANDSCAPE)
   drawer.setActive(landscape.matches)
   landscape.addEventListener('change', (event) => drawer.setActive(event.matches))
-  matchMedia(phoneQuery).addEventListener('change', (event) => {
+  const compact = matchMedia(COMPACT)
+  syncBrandFocus(compact.matches)
+  compact.addEventListener('change', (event) => {
     if (!event.matches) recorderCard.classList.remove('expanded')
+    syncBrandFocus(event.matches)
   })
   window.addEventListener('blur', () => stick.releaseAll())
   followAddress(router, algorithms, {
@@ -416,10 +458,13 @@ function start(): void {
     selectLesson,
     loadCourse,
     current: () => ({ lesson: store.lesson, course: store.course }),
+    about: (open) => (open ? aboutController.open('address') : aboutController.close()),
   })
+  // A load at the About route opens it once everything is set up; the stored lesson and course stay.
+  if (route.about) aboutController.open('load')
   window.addEventListener('keydown', (event) => {
     const direction = gameKey(event)
-    if (!direction || !flysByHand(lesson) || typingTarget(document.activeElement as HTMLElement | null)) return
+    if (!direction || aboutController.blocksGameKeys() || !flysByHand(lesson) || typingTarget(document.activeElement as HTMLElement | null)) return
     event.preventDefault()
     if (!event.repeat) stick.press(direction, `key:${event.key.toLowerCase()}`)
   })

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { createTrace } from '../sim/trace.ts'
 import type { Snapshot, Trace } from '../sim/types.ts'
-import { LIGHT, type Theme } from '../ui/theme.ts'
+import { themeTokens } from '../styles/css-test-helpers.ts'
+import tokensCss from '../styles/tokens.css?raw'
+import { LIGHT, readTheme, type Theme } from '../ui/theme.ts'
 import { fixtureSnapshot } from './fixture.ts'
 import { RECORDER_FONT, RECORDER_LINE } from './recorder-geometry.ts'
-import { READING_ALPHA, draw } from './recorder.ts'
+import { READING_ALPHA, RING_BAR_OUTLINE_TOKEN, draw, drawRingBar } from './recorder.ts'
 import { SCENE } from './scene.ts'
 
 /** A copy of `trace` whose elevator column swings between -1 and 1. */
@@ -22,8 +24,8 @@ function elevatorTrace(trace: Trace): Trace {
   return copy
 }
 
-/** A dark stand-in: the light theme with its line colors swapped for others. */
-const DARK: Theme = { ...LIGHT, panel: '#14181F', ink: '#E8ECF2', accent: '#5AB0FF', amber: '#FFB03A', muted: '#9AA4B2' }
+/** The dark theme as tokens.css defines it. */
+const DARK: Theme = readTheme((name) => themeTokens(tokensCss).dark[name.slice(2)])
 
 const withMarkers = (markers: Snapshot['markers'], s: Snapshot = fixtureSnapshot()): Snapshot => ({ ...s, markers })
 
@@ -48,6 +50,111 @@ function recordingContext(): { ctx: CanvasRenderingContext2D; calls: string[] } 
   })
   return { ctx: ctx as unknown as CanvasRenderingContext2D, calls }
 }
+
+describe('recorder ring bars', () => {
+  /** The fixture with two rings flown: the first passed, the second missed, the rest pending. */
+  const snapshot = fixtureSnapshot(2)
+
+  it.each([
+    ['light', LIGHT],
+    ['dark', DARK],
+  ] as const)('fills passed and pending bars 12 px wide and outlines them 3 px in Strong, in the %s theme', (_name, theme) => {
+    expect(RING_BAR_OUTLINE_TOKEN).toBe('strong')
+    const { ctx, calls } = recordingContext()
+    draw(ctx, snapshot, theme, { width: 1000, height: 240, dpr: 1 })
+    for (const fill of [SCENE.ringHit, SCENE.ringGold]) {
+      const at = calls.indexOf(`fillStyle=${fill}`)
+      expect(at).toBeGreaterThan(-1)
+      const rect = JSON.parse(calls[at + 2]!.slice('fillRect='.length)) as number[]
+      expect(calls[at + 1]).toBe('fillRect')
+      expect(rect[2]).toBe(12)
+      expect(calls.slice(at + 3, at + 6)).toEqual([`lineWidth=${RECORDER_LINE.ringOutline}`, `strokeStyle=${theme.strong}`, 'strokeRect'])
+    }
+    expect(RECORDER_LINE.ringOutline).toBe(3)
+    // The miss stays a hollow red outline, with no fill and no Strong outline.
+    expect(calls).not.toContain(`fillStyle=${SCENE.ringMiss}`)
+    const miss = calls.indexOf(`strokeStyle=${SCENE.ringMiss}`)
+    expect(calls.slice(miss - 1, miss + 2)).toEqual([`lineWidth=${RECORDER_LINE.ringMiss}`, `strokeStyle=${SCENE.ringMiss}`, 'strokeRect'])
+    expect(calls[miss + 2]).not.toBe(`lineWidth=${RECORDER_LINE.ringOutline}`)
+  })
+
+  it('insets the outline by half its width so it keeps the bar size', () => {
+    const rects: number[][] = []
+    const fills: number[][] = []
+    const ctx = new Proxy({} as Record<string | symbol, unknown>, {
+      get(target, key) {
+        if (key in target) return target[key]
+        return (...args: number[]) => {
+          if (key === 'strokeRect' && target.strokeStyle === LIGHT.strong) rects.push(args)
+          if (key === 'fillRect' && (target.fillStyle === SCENE.ringHit || target.fillStyle === SCENE.ringGold)) fills.push(args)
+          return key === 'measureText' ? { width: 9 } : undefined
+        }
+      },
+      set(target, key, value) {
+        target[key] = value
+        return true
+      },
+    }) as unknown as CanvasRenderingContext2D
+    draw(ctx, snapshot, LIGHT, { width: 1000, height: 240, dpr: 1 })
+    expect(rects.length).toBe(fills.length)
+    expect(rects.length).toBeGreaterThan(0)
+    rects.forEach((r, i) => {
+      const f = fills[i]!
+      expect(r[0]).toBeCloseTo(f[0]! + 1.5, 9)
+      expect(r[1]).toBeCloseTo(f[1]! + 1.5, 9)
+      expect(r[2]).toBeCloseTo(f[2]! - 3, 9)
+      expect(r[3]).toBeCloseTo(f[3]! - 3, 9)
+    })
+  })
+})
+
+describe('ring bars shorter than their outline', () => {
+  /** Every fill and stroke rect painted for `bar`, as its extent. */
+  const paint = (bar: Parameters<typeof drawRingBar>[1]) => {
+    const rects: Array<{ kind: string; color: string; left: number; top: number; right: number; bottom: number }> = []
+    const ctx = new Proxy({} as Record<string | symbol, unknown>, {
+      get(target, key) {
+        if (key in target) return target[key]
+        return (x: number, y: number, w: number, h: number) => {
+          if (key === 'fillRect') rects.push({ kind: 'fill', color: String(target.fillStyle), left: x, top: y, right: x + w, bottom: y + h })
+          if (key === 'strokeRect') {
+            const half = Number(target.lineWidth) / 2
+            rects.push({ kind: 'stroke', color: String(target.strokeStyle), left: x - half, top: y - half, right: x + w + half, bottom: y + h + half })
+          }
+        }
+      },
+      set(target, key, value) {
+        target[key] = value
+        return true
+      },
+    }) as unknown as CanvasRenderingContext2D
+    drawRingBar(ctx, bar, LIGHT)
+    return rects
+  }
+
+  it.each([
+    ['clipped at the plot edge', 1],
+    ['2 px tall', 2],
+  ])('paints nothing outside a bar %s', (_name, height) => {
+    for (const state of ['pass', 'pending', 'miss'] as const) {
+      const bar = { index: 0, x: 100, top: 50, bottom: 50 + height, width: 12, state }
+      const rects = paint(bar)
+      expect(rects.length).toBeGreaterThan(0)
+      for (const r of rects) {
+        expect(r.left).toBeGreaterThanOrEqual(94)
+        expect(r.right).toBeLessThanOrEqual(106)
+        expect(r.top).toBeGreaterThanOrEqual(50)
+        expect(r.bottom).toBeLessThanOrEqual(50 + height)
+      }
+      expect(rects.map((r) => r.color)).toContain(state === 'miss' ? SCENE.ringMiss : state === 'pass' ? SCENE.ringHit : SCENE.ringGold)
+    }
+  })
+
+  it('keeps the outline on a bar tall enough to hold it', () => {
+    const rects = paint({ index: 0, x: 100, top: 50, bottom: 80, width: 12, state: 'pass' })
+    expect(rects.filter((r) => r.kind === 'stroke').map((r) => r.color)).toEqual([LIGHT.strong])
+  })
+})
 
 describe('recorder draw', () => {
   it('paints nothing at size 0', () => {

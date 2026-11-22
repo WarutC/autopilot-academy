@@ -44,6 +44,7 @@ class FakeElement {
   }
   setAttribute(name: string, value: string): void {
     this.attrs.set(name, value)
+    if (name === 'class') this.className = value
   }
   getAttribute(name: string): string | null {
     return this.attrs.get(name) ?? null
@@ -72,6 +73,9 @@ class FakeElement {
 class FakeDoc {
   activeElement: FakeElement | null = null
   createElement(tag: string): FakeElement {
+    return new FakeElement(tag, this)
+  }
+  createElementNS(_ns: string, tag: string): FakeElement {
     return new FakeElement(tag, this)
   }
 }
@@ -103,6 +107,26 @@ function setup(params = defaultParams(pid)) {
 }
 
 describe('createAutopilotCard', () => {
+  it('keeps one hidden Whale before the lesson text for every lesson', () => {
+    const { card, live } = setup()
+    const community = { ...dampedP, community: true }
+    const check = () => {
+      const rows = live('lesson-row')
+      expect(rows).toHaveLength(1)
+      const kids = rows[0]!.children as FakeElement[]
+      expect(kids.map((k) => k.className)).toEqual(['mascot mascot-whale', 'lesson'])
+      expect(kids[0]!.tagName).toBe('svg')
+      expect(kids[0]!.getAttribute('aria-hidden')).toBe('true')
+      expect(live('mascot-whale')).toHaveLength(1)
+    }
+    check()
+    for (const m of [...algorithms, community]) {
+      card.setLesson(m, defaultParams(m))
+      check()
+      expect(live('lesson')[0]!.textContent).toBe(m.lesson)
+    }
+  })
+
   it('builds the heading, name, lesson with a bold Try:, five PID rows and Reset', () => {
     const { root, els, byClass, row } = setup()
     expect(byClass('card-header')[0]!.textContent).toBe('Autopilot')

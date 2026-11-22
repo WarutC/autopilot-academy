@@ -1,10 +1,11 @@
 // The Autopilot card: the lesson chips (each showing its tag, or its best
 // score once it has one), then the selected module's name, its lesson, one row
-// per parameter and a reset button. Built from the registry
-// and each module's `ParamSpec` list only, so every algorithm gets the same
-// panel.
+// per parameter and a reset button. The Whale instructor sits beside the
+// lesson text. Built from the registry and each module's `ParamSpec` list
+// only, so every algorithm gets the same panel.
 
 import type { AlgorithmModule, ParamSpec, Params } from '../algorithms/index.ts'
+import { createMascot } from '../render/mascots.ts'
 import { inFlight, type Phase } from './flight.ts'
 import { changeLabel, clampValue, formatValue, fromSlider, parseNumber, resetChanges, sliderRange, toSlider } from './params.ts'
 
@@ -118,6 +119,11 @@ export function createAutopilotCard(
   const lesson = doc.createElement('p')
   lesson.className = 'lesson'
 
+  // The Whale is built once and stays beside every lesson.
+  const lessonRow = doc.createElement('div')
+  lessonRow.className = 'lesson-row'
+  lessonRow.append(createMascot(doc, 'whale'), lesson)
+
   const list = doc.createElement('div')
   list.className = 'param-list'
 
@@ -126,7 +132,7 @@ export function createAutopilotCard(
   reset.className = 'btn btn-reset'
   reset.textContent = 'Reset this autopilot to defaults'
 
-  body.append(chipGroup, name, lesson, list, reset)
+  body.append(chipGroup, name, lessonRow, list, reset)
   element.append(header, body)
 
   /** The shown module, its values and its rows. */

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createDrawer, PHONE_LANDSCAPE } from './drawer.ts'
+import { createDrawer } from './drawer.ts'
 
 type Listener = (event: FakeEvent) => void
 
@@ -94,12 +94,6 @@ function setup() {
   panel.inside.push(close)
   return { doc, panel, background, onOpen, drawer, toggle, close, scrim }
 }
-
-describe('PHONE_LANDSCAPE', () => {
-  it('is a short landscape viewport', () => {
-    expect(PHONE_LANDSCAPE).toBe('(orientation: landscape) and (max-height: 540px)')
-  })
-})
 
 describe('createDrawer', () => {
   it('builds a Cards toggle, a Close button and a hidden scrim', () => {

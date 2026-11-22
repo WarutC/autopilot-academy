@@ -307,10 +307,11 @@ describe('recorderGeometry: ring bars', () => {
   const g = recorderGeometry(fixtureSnapshot(), SIZE)
   const X = (t: number): number => g.plot.left + (t / g.tEnd) * (g.plot.right - g.plot.left)
 
-  it('centers each bar at its ring time and spans the ring radius, 8 px wide', () => {
+  it('centers each bar at its ring time and spans the ring radius, 12 px wide', () => {
     course.rings.forEach((ring, i) => {
       const bar = g.ringBars[i]!
       expect(bar.width).toBe(RING_BAR_WIDTH)
+      expect(bar.width).toBe(12)
       expect(bar.x).toBeCloseTo(X(ring.x / PLANT.speed), 9)
       expect(bar.top).toBeCloseTo(Math.max(g.plot.top, plotY(g, ring.h + PLANT.ringR)), 9)
       expect(bar.bottom).toBeCloseTo(Math.min(g.plot.bottom, plotY(g, ring.h - PLANT.ringR)), 9)
