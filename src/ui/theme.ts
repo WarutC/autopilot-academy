@@ -1,7 +1,9 @@
 // UI colors and fonts read from the CSS custom properties in tokens.css, so the
-// canvas follows the same light and dark themes as the page.
+// canvas follows the same light and dark themes as the page, plus the system's
+// reduced-motion setting.
 
-export interface Theme {
+/** The string tokens, one per CSS custom property. */
+export interface ThemeTokens {
   readonly bg: string
   readonly ink: string
   readonly muted: string
@@ -21,6 +23,11 @@ export interface Theme {
   readonly focus: string
   readonly fontCondensed: string
   readonly fontBody: string
+}
+
+export interface Theme extends ThemeTokens {
+  /** The system asks for reduced motion: the scene backdrop holds still. */
+  readonly reducedMotion: boolean
 }
 
 /** The light theme, used for any token the page does not define. */
@@ -44,17 +51,24 @@ export const LIGHT: Theme = {
   focus: '#F5B700',
   fontCondensed: "'Barlow Condensed', 'Arial Narrow', Barlow, sans-serif",
   fontBody: "Barlow, 'Segoe UI', system-ui, sans-serif",
+  reducedMotion: false,
 }
 
+/** Every string token, in `LIGHT` order. */
+export const TOKEN_KEYS: readonly (keyof ThemeTokens)[] = Object.keys(LIGHT).filter((key) => key !== 'reducedMotion') as (keyof ThemeTokens)[]
+
+const DARK_QUERY = '(prefers-color-scheme: dark)'
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
+
 /** `fooBar` → `--foo-bar`. */
-export function cssVarName(key: keyof Theme): string {
+export function cssVarName(key: keyof ThemeTokens): string {
   return `--${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`
 }
 
 /** Builds a theme from `getVar('--name')`; an empty, missing or failing value falls back to `LIGHT`. */
-export function readTheme(getVar: (name: string) => string | null | undefined): Theme {
-  const theme: Record<string, string> = {}
-  for (const key of Object.keys(LIGHT) as (keyof Theme)[]) {
+export function readTheme(getVar: (name: string) => string | null | undefined, reducedMotion = false): Theme {
+  const theme: Record<string, string | boolean> = {}
+  for (const key of TOKEN_KEYS) {
     let value: string | null | undefined
     try {
       value = getVar(cssVarName(key))
@@ -64,19 +78,32 @@ export function readTheme(getVar: (name: string) => string | null | undefined): 
     const trimmed = typeof value === 'string' ? value.trim() : ''
     theme[key] = trimmed === '' ? LIGHT[key] : trimmed
   }
+  theme.reducedMotion = reducedMotion
   return theme as unknown as Theme
+}
+
+/** Whether the system asks for reduced motion; false where `matchMedia` is missing. */
+function prefersReducedMotion(): boolean {
+  if (typeof matchMedia !== 'function') return false
+  try {
+    return matchMedia(REDUCED_MOTION_QUERY).matches === true
+  } catch {
+    return false
+  }
 }
 
 /** The theme currently applied to the document root. */
 export function loadTheme(root: Element = document.documentElement): Theme {
   const style = getComputedStyle(root)
-  return readTheme((name) => style.getPropertyValue(name))
+  return readTheme((name) => style.getPropertyValue(name), prefersReducedMotion())
 }
 
-/** Calls `onChange` when the system switches between light and dark; returns an unsubscribe. */
+/** Calls `onChange` when the system switches between light and dark or toggles reduced motion; returns an unsubscribe. */
 export function watchTheme(onChange: () => void): () => void {
-  const query = matchMedia('(prefers-color-scheme: dark)')
+  const queries = [matchMedia(DARK_QUERY), matchMedia(REDUCED_MOTION_QUERY)]
   const listener = (): void => onChange()
-  query.addEventListener('change', listener)
-  return () => query.removeEventListener('change', listener)
+  for (const query of queries) query.addEventListener('change', listener)
+  return () => {
+    for (const query of queries) query.removeEventListener('change', listener)
+  }
 }

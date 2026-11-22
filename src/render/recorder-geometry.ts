@@ -19,6 +19,8 @@ export const RECORDER_LINE = {
   marker: 3,
   /** Outline of a missed ring bar. */
   ringMiss: 3,
+  /** Outline around a passed or pending ring bar. */
+  ringOutline: 3,
   /** Legend swatch line. */
   swatch: 3,
   axis: 1,
@@ -59,7 +61,7 @@ export const BAND_SHARE = 0.25
 export const BAND_MIN = 40
 
 /** Width of a ring bar, CSS px. */
-export const RING_BAR_WIDTH = 8
+export const RING_BAR_WIDTH = 12
 
 /** Gap kept between two labels on one row, CSS px. */
 const LABEL_GAP = 8

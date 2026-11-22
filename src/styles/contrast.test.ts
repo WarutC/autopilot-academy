@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { READING_ALPHA } from '../render/recorder.ts'
+import { READING_ALPHA, RING_BAR_OUTLINE_TOKEN } from '../render/recorder.ts'
+import { cssVarName } from '../ui/theme.ts'
 import layoutCss from './layout.css?raw'
 import tokensCss from './tokens.css?raw'
 
@@ -101,6 +102,12 @@ describe.each([
 
   it('the wingman logbook tag text, Ghost mixed toward Ink, is at least 4.5:1 on panel', () => {
     expect(contrast(over(t.ghost, t.ink, wingmanTagGhost), t.panel)).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('the ring bar outline is at least 3:1 on panel', () => {
+    const token = cssVarName(RING_BAR_OUTLINE_TOKEN).slice(2)
+    expect(t[token]).toBeDefined()
+    expect(contrast(t[token], t.panel)).toBeGreaterThanOrEqual(3)
   })
 
   it('the wingman logbook tag border, Ghost, is at least 3:1 on panel', () => {

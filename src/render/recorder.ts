@@ -6,7 +6,7 @@
 // and fills what it returns.
 
 import type { Snapshot } from '../sim/types.ts'
-import type { Theme } from '../ui/theme.ts'
+import type { Theme, ThemeTokens } from '../ui/theme.ts'
 import { RECORDER_DOT, RECORDER_FONT, RECORDER_LINE, recorderGeometry, type LegendKey, type RingBar } from './recorder-geometry.ts'
 import { SCENE } from './scene.ts'
 import { TARGET_DASH, type Point, type RingState, type SceneSize } from './scene-geometry.ts'
@@ -26,6 +26,12 @@ const RING_BAR_COLOR: Record<RingState, string> = {
   miss: SCENE.ringMiss,
 }
 
+/**
+ * The theme token that outlines a passed or pending ring bar, so the gold and
+ * green fills hold 3:1 against the panel in both themes.
+ */
+export const RING_BAR_OUTLINE_TOKEN = 'strong' satisfies keyof ThemeTokens
+
 function polyline(ctx: CanvasRenderingContext2D, points: readonly Point[]): void {
   ctx.beginPath()
   points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)))
@@ -39,8 +45,8 @@ function hline(ctx: CanvasRenderingContext2D, x0: number, x1: number, y: number)
   ctx.stroke()
 }
 
-/** A passed or pending ring is a filled bar; a missed ring is a hollow outline. */
-function drawRingBar(ctx: CanvasRenderingContext2D, bar: RingBar): void {
+/** A passed or pending ring is a filled bar with an outline; a missed ring is a hollow outline. */
+function drawRingBar(ctx: CanvasRenderingContext2D, bar: RingBar, theme: Theme): void {
   const color = RING_BAR_COLOR[bar.state]
   const left = bar.x - bar.width / 2
   const height = bar.bottom - bar.top
@@ -53,6 +59,10 @@ function drawRingBar(ctx: CanvasRenderingContext2D, bar: RingBar): void {
   } else {
     ctx.fillStyle = color
     ctx.fillRect(left, bar.top, bar.width, height)
+    const inset = RECORDER_LINE.ringOutline / 2
+    ctx.lineWidth = RECORDER_LINE.ringOutline
+    ctx.strokeStyle = theme[RING_BAR_OUTLINE_TOKEN]
+    ctx.strokeRect(left + inset, bar.top + inset, Math.max(0, bar.width - 2 * inset), Math.max(0, height - 2 * inset))
   }
 }
 
@@ -86,7 +96,7 @@ export function draw(ctx: CanvasRenderingContext2D, snapshot: Snapshot, theme: T
   for (const y of [g.band.top, g.band.mid, g.band.bottom]) hline(ctx, g.plot.left, g.plot.right, y)
   ctx.fillText('u', g.plot.left - 8, g.band.mid)
 
-  for (const bar of g.ringBars) drawRingBar(ctx, bar)
+  for (const bar of g.ringBars) drawRingBar(ctx, bar, theme)
 
   if (g.target.length >= 2) {
     ctx.save()
