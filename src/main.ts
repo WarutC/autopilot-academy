@@ -1,6 +1,6 @@
 import './styles/tokens.css'
 import './styles/layout.css'
-import { algorithms, defaultParams, findAlgorithm, type AlgorithmModule } from './algorithms/index.ts'
+import { algorithms, findAlgorithm, type AlgorithmModule } from './algorithms/index.ts'
 import { draw as drawRecorder } from './render/recorder.ts'
 import { draw as drawScene } from './render/scene.ts'
 import { PLANT } from './sim/plant.ts'
@@ -11,9 +11,11 @@ import { bannerContent, createBanner } from './ui/banner.ts'
 import { createFlight, inFlight, type Phase } from './ui/flight.ts'
 import { createStick, gameKey, typingTarget } from './ui/input.ts'
 import { createModeSwitch } from './ui/mode-switch.ts'
+import { browserStorage } from './ui/persistence.ts'
 import { createScoreMirror } from './ui/score-mirror.ts'
 import { createSetpointSlider } from './ui/setpoint-slider.ts'
 import { createStickButtons } from './ui/stick-buttons.ts'
+import { createStore } from './ui/store.ts'
 import { loadTheme, watchTheme } from './ui/theme.ts'
 import { createToolbar } from './ui/toolbar.ts'
 
@@ -58,20 +60,16 @@ recorderBody.className = 'card-body'
 recorderBody.append(recorderCanvas)
 recorderCard.append(recorderTitle, recorderBody)
 
-/** Each lesson's current params this session, starting from its defaults. */
-const paramsById = new Map(algorithms.map((m) => [m.id, defaultParams(m)]))
+/** The remembered lesson, modes, params and course, and the flight phase. */
+const store = createStore(algorithms, browserStorage)
 /** The selected lesson. */
-let lesson: AlgorithmModule = findAlgorithm('pid') ?? algorithms[0]!
+let lesson: AlgorithmModule = findAlgorithm(store.lesson) ?? algorithms[0]!
 /** The player's autopilot; each Fly starts a run with the current one. */
-let player: RunPlayer = { algorithm: lesson, params: paramsById.get(lesson.id)! }
+let player: RunPlayer = { algorithm: lesson, params: store.params(lesson.id) }
 
 /** A lesson whose modes include Manual flies by hand with the stick. */
 const flysByHand = (m: AlgorithmModule) => m.modes.includes('manual')
-/** A lesson's mode until the player picks another: Autopilot when it has one, else its first mode. */
-const defaultMode = (m: AlgorithmModule): FlightMode => (m.modes.includes('autopilot') ? 'autopilot' : m.modes[0]!)
-/** Each lesson's flight mode this session. */
-const modeById = new Map<string, FlightMode>()
-const runMode = (): FlightMode => modeById.get(lesson.id) ?? defaultMode(lesson)
+const runMode = (): FlightMode => store.mode(lesson.id)
 
 /** The player's target altitude in Semi-auto; it keeps its value across runs. */
 let setpoint: number = PLANT.hStart
@@ -84,11 +82,11 @@ const stick = createStick((value) => {
 // Every new run takes the player's live inputs, so a button held across Fly
 // counts from the first step and the setpoint holds across runs.
 const flight = createFlight(() => {
-  const run = createRun({ course: 101, mode: runMode(), player })
+  const run = createRun({ course: store.course, mode: runMode(), player })
   run.setSetpoint(setpoint)
   run.setInput(stick.value)
   return run
-})
+}, store)
 
 const stickButtons = createStickButtons(document, stick)
 stage.append(stickButtons.element)
@@ -109,7 +107,7 @@ stage.append(setpointSlider.element)
 const modeSwitch = createModeSwitch(document, {
   select(mode) {
     if (!lesson.modes.includes(mode)) return
-    modeById.set(lesson.id, mode)
+    store.setMode(lesson.id, mode)
     if (inFlight(flight.phase)) flight.fly()
     else flight.reset()
     syncUi()
@@ -128,11 +126,10 @@ syncMode()
 
 const autopilotCard = createAutopilotCard(document, algorithms, lesson.id, player.params, {
   change(key, value) {
-    // A new record each time, so a finished run's params are never touched.
-    const params = { ...(paramsById.get(lesson.id) ?? defaultParams(lesson)), [key]: value }
-    paramsById.set(lesson.id, params)
-    player = { ...player, params }
-    if (inFlight(flight.phase)) flight.run.setParam('player', key, value)
+    // The store hands out a new record each time, so a finished run's params are never touched.
+    store.setParam(lesson.id, key, value)
+    player = { ...player, params: store.params(lesson.id) }
+    if (inFlight(flight.phase)) flight.run.setParam('player', key, player.params[key] ?? value)
   },
   commit(label) {
     if (inFlight(flight.phase)) {
@@ -143,8 +140,9 @@ const autopilotCard = createAutopilotCard(document, algorithms, lesson.id, playe
   select(id) {
     const next = findAlgorithm(id)
     if (!next || inFlight(flight.phase) || next.id === lesson.id) return
+    store.setLesson(next.id)
     lesson = next
-    player = { algorithm: next, params: paramsById.get(next.id) ?? defaultParams(next) }
+    player = { algorithm: next, params: store.params(next.id) }
     autopilotCard.setLesson(next, player.params)
     stickButtons.setVisible(flysByHand(next))
     stick.releaseAll()

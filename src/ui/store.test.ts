@@ -1,0 +1,118 @@
+import { describe, expect, it } from 'vitest'
+import { defaultParams } from '../algorithms/index.ts'
+import manual from '../algorithms/manual.ts'
+import pid from '../algorithms/pid.ts'
+import { STORAGE_KEY, type StorageGetter } from './persistence.ts'
+import { createPhase, createStore } from './store.ts'
+
+const modules = [manual, pid]
+
+type FakeStorage = NonNullable<ReturnType<StorageGetter>>
+const pidDefaults = defaultParams(pid)
+
+function fakeStorage() {
+  const items = new Map<string, string>()
+  const storage = {
+    getItem: (key: string) => items.get(key) ?? null,
+    setItem: (key: string, value: string) => void items.set(key, value),
+  } as unknown as FakeStorage
+  return { items, get: () => storage }
+}
+
+describe('createStore', () => {
+  it('starts on first-visit defaults', () => {
+    const store = createStore(modules, fakeStorage().get)
+    expect(store.lesson).toBe('pid')
+    expect(store.mode('pid')).toBe('autopilot')
+    expect(store.mode('manual')).toBe('manual')
+    expect(store.params('pid')).toEqual(pidDefaults)
+    expect(store.course).toBe(101)
+    expect(store.phase).toBe('ready')
+  })
+
+  it('persists every setter and reloads it', () => {
+    const fake = fakeStorage()
+    const store = createStore(modules, fake.get)
+    store.setParam('pid', 'Kp', 0.5)
+    store.setMode('pid', 'semi-auto')
+    store.setLesson('manual')
+    store.setCourse(202)
+    const again = createStore(modules, fake.get)
+    expect(again.lesson).toBe('manual')
+    expect(again.mode('pid')).toBe('semi-auto')
+    expect(again.params('pid')).toEqual({ ...pidDefaults, Kp: 0.5 })
+    expect(again.course).toBe(202)
+  })
+
+  it('clamps a param value', () => {
+    const store = createStore(modules, fakeStorage().get)
+    store.setParam('pid', 'Kp', 7)
+    store.setParam('pid', 'aw', 0)
+    expect(store.params('pid')).toEqual({ ...pidDefaults, Kp: 1, aw: 0 })
+  })
+
+  it('ignores invalid setter input and does not save it', () => {
+    const fake = fakeStorage()
+    const store = createStore(modules, fake.get)
+    store.setLesson('nope')
+    store.setMode('pid', 'manual')
+    store.setMode('nope', 'autopilot')
+    store.setParam('pid', 'foo', 1)
+    store.setParam('nope', 'Kp', 1)
+    store.setParam('pid', 'Kp', NaN)
+    store.setParam('pid', 'Kp', Infinity)
+    store.setCourse(0)
+    store.setCourse(1.5)
+    store.setCourse(100000)
+    expect(store.lesson).toBe('pid')
+    expect(store.mode('pid')).toBe('autopilot')
+    expect(store.params('pid')).toEqual(pidDefaults)
+    expect(store.params('pid')).not.toHaveProperty('foo')
+    expect(store.course).toBe(101)
+    expect(fake.items.has(STORAGE_KEY)).toBe(false)
+  })
+
+  it('never mutates a params record it handed out', () => {
+    const store = createStore(modules, fakeStorage().get)
+    const before = store.params('pid')
+    store.setParam('pid', 'Kp', 0.5)
+    expect(before).toEqual(pidDefaults)
+    expect(store.params('pid')).not.toBe(before)
+    expect(store.params('pid').Kp).toBe(0.5)
+  })
+
+  it('keeps working in memory when storage throws', () => {
+    const throwing = (): never => {
+      throw new Error('blocked')
+    }
+    const store = createStore(modules, throwing)
+    store.setParam('pid', 'Kp', 0.5)
+    store.setMode('pid', 'semi-auto')
+    store.setLesson('manual')
+    expect(store.params('pid').Kp).toBe(0.5)
+    expect(store.mode('pid')).toBe('semi-auto')
+    expect(store.lesson).toBe('manual')
+    const failing = { getItem: throwing, setItem: throwing } as unknown as FakeStorage
+    const other = createStore(modules, () => failing)
+    other.setCourse(303)
+    expect(other.course).toBe(303)
+  })
+
+  it('does not save the phase', () => {
+    const fake = fakeStorage()
+    const store = createStore(modules, fake.get)
+    store.setPhase('running')
+    expect(store.phase).toBe('running')
+    expect(fake.items.has(STORAGE_KEY)).toBe(false)
+    expect(createStore(modules, fake.get).phase).toBe('ready')
+  })
+})
+
+describe('createPhase', () => {
+  it('holds a phase in memory, starting ready', () => {
+    const owner = createPhase()
+    expect(owner.phase).toBe('ready')
+    owner.setPhase('paused')
+    expect(owner.phase).toBe('paused')
+  })
+})

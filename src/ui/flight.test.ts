@@ -4,6 +4,7 @@ import pid from '../algorithms/pid.ts'
 import { PLANT } from '../sim/plant.ts'
 import { createRun } from '../sim/run.ts'
 import { summarize } from '../sim/scoring.ts'
+import { createPhase } from './store.ts'
 import { createFlight, flyLabel, inFlight, pauseEnabled, pauseLabel, type Flight, type Phase, type Speed } from './flight.ts'
 
 const pidRun = () =>
@@ -175,6 +176,23 @@ describe('createFlight', () => {
     expect(scores[1]).toEqual(scores[0])
     expect(scores[2]).toEqual(scores[0])
     expect(scores[0]!.points).toBeGreaterThan(0)
+  })
+
+  it('reads and writes the phase through its owner', () => {
+    const owner = createPhase()
+    owner.setPhase('ended')
+    const f = createFlight(pidRun, owner)
+    expect(owner.phase).toBe('ready')
+    f.fly()
+    expect(owner.phase).toBe('running')
+    f.togglePause()
+    expect(owner.phase).toBe('paused')
+    owner.setPhase('running')
+    expect(f.phase).toBe('running')
+    flyToEnd(f, [0.05])
+    expect(owner.phase).toBe('ended')
+    f.reset()
+    expect(owner.phase).toBe('ready')
   })
 
   it('keeps the sim clock in whole physics steps', () => {
