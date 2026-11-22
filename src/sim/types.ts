@@ -6,6 +6,9 @@ export type PlaneId = 'player' | 'wingman'
 
 export type PlaneStatus = 'flying' | 'finished' | 'crashed'
 
+/** How a plane is flown; algorithm modules list their modes with this union. */
+export type FlightMode = 'manual' | 'semi-auto' | 'autopilot'
+
 /** Manual stick: down, centered or up. */
 export type StickInput = -1 | 0 | 1
 
@@ -16,8 +19,10 @@ export interface Ring {
 }
 
 /**
- * What a controller sees on each control tick. `h` and `v` are the noisy
- * measurement or the Kalman estimate, never the true plant state.
+ * What a controller sees on each control tick. `h` and `v` are what the
+ * plane's sensors report. There is no sensor noise yet, so for now they are
+ * the true altitude and its difference over the control period; with noise
+ * they become the measurement or the Kalman estimate.
  */
 export interface ControlContext {
   /** Time since the start of the run, in seconds. */
@@ -32,8 +37,8 @@ export interface ControlContext {
   readonly v: number
   /** Manual stick, or 0 outside Manual mode. */
   readonly input: StickInput
-  /** Course reference `dt` seconds ahead of the plane. */
-  refAhead(dt: number): number
+  /** Course reference `ahead` seconds in front of the plane. */
+  refAhead(ahead: number): number
 }
 
 export interface Controller {

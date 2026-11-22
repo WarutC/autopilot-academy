@@ -158,6 +158,9 @@ describe('Run control context', () => {
     expect(kept!.input).toBe(0)
     expect(kept!.v).toBe(0)
     expect(kept!.refAhead(0)).toBe(kept!.ref)
+    // From x = 0, 7 s ahead is x = 140, past the first boundary at 120 m.
+    expect(kept!.refAhead(140 / PLANT.speed)).toBe(makeCourse(101).rings[0].h)
+    expect(kept!.refAhead(100 / PLANT.speed)).toBe(PLANT.hStart)
     // The kept context does not follow the plane.
     run.step(40)
     expect(kept!.t).toBe(0)
@@ -171,6 +174,27 @@ describe('Run control context', () => {
     expect(seen[0].v).toBe(0)
     expect(seen[2].v).toBeCloseTo((seen[2].h - seen[1].h) / PLANT.Tc, 12)
     expect(seen[1].v).toBeGreaterThan(0)
+  })
+})
+
+describe('Run totals', () => {
+  it('integrates u² over every physics step for energy', () => {
+    const run = runWith(fixed(() => 0.5))
+    run.step(40)
+    expect(run.result('player')!.energy).toBeCloseTo(0.25 * PLANT.dt * 40, 12)
+  })
+
+  it('integrates the absolute altitude error for IAE', () => {
+    // With u = 0 the plane holds hStart; the error is zero until the first
+    // boundary at 120 m, then the gap to ring 0 on every step after it.
+    const run = runWith(fixed(() => 0))
+    const steps = 1400
+    run.step(steps)
+    const gap = Math.abs(makeCourse(101).rings[0].h - PLANT.hStart)
+    const stepsPast = steps - 120 / (PLANT.speed * PLANT.dt)
+    const expected = gap * PLANT.dt * stepsPast
+    expect(run.status()).toBe('flying')
+    expect(Math.abs(run.result('player')!.iae - expected)).toBeLessThanOrEqual(gap * PLANT.dt)
   })
 })
 

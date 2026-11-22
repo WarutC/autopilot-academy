@@ -8,7 +8,6 @@ import {
   integrateEnergy,
   integrateError,
   ringResult,
-  type FlightMode,
   type PlaneResult,
   type ScoredRun,
 } from './scoring.ts'
@@ -16,6 +15,7 @@ import { createTrace, type TraceBuffer } from './trace.ts'
 import type {
   ControlContext,
   Controller,
+  FlightMode,
   PlaneId,
   PlaneSnapshot,
   PlaneStatus,

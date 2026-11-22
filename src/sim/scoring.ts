@@ -1,10 +1,7 @@
 // The single home for scoring: ring points, IAE, energy and the logbook row.
 
 import { PLANT } from './plant.ts'
-import type { PlaneId, PlaneStatus, Ring, RingResult } from './types.ts'
-
-/** How a plane is flown; algorithm modules list their modes with this union. */
-export type FlightMode = 'manual' | 'semi-auto' | 'autopilot'
+import type { FlightMode, PlaneId, PlaneStatus, Ring, RingResult } from './types.ts'
 
 /** One logbook row for one plane. */
 export interface LogEntry {

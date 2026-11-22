@@ -139,6 +139,34 @@ describe('pid controller', () => {
     expect(u).toBeCloseTo(0.5, 12)
   })
 
+  it('leaves a non-zero integrator untouched on a NaN measurement tick', () => {
+    const params = { ...defaultParams(pid), aw: 0 }
+    const a = pid.create(params)
+    const b = pid.create(params)
+    for (let k = 0; k < 5; k++) {
+      a.compute(ctx({ ref: 60, h: 50 }))
+      b.compute(ctx({ ref: 60, h: 50 }))
+    }
+    expect(a.compute(ctx({ ref: 60, h: Number.NaN }))).toBe(0)
+    // Zero error: only the integrator is left in the output.
+    const ua = a.compute(ctx({ ref: 60, h: 60 }))
+    expect(ua).toBeCloseTo(5 * 0.03 * 10 * 0.02, 12)
+    expect(ua).toBe(b.compute(ctx({ ref: 60, h: 60 })))
+  })
+
+  it('keeps the previous setpoint across a non-finite setpoint tick', () => {
+    const params = { ...defaultParams(pid), Ki: 0, dmeas: 0 }
+    const a = pid.create(params)
+    const b = pid.create(params)
+    a.compute(ctx({ ref: 50, h: 50 }))
+    b.compute(ctx({ ref: 50, h: 50 }))
+    expect(a.compute(ctx({ ref: Number.NaN, h: 50 }))).toBe(0)
+    // The setpoint kick is measured from 50, the last finite setpoint.
+    const ua = a.compute(ctx({ ref: 50.1, h: 50 }))
+    expect(ua).toBeCloseTo(0.2 * 0.1 + 0.05 * (0.1 / 0.02), 12)
+    expect(ua).toBe(b.compute(ctx({ ref: 50.1, h: 50 })))
+  })
+
   it('never throws on non-finite inputs', () => {
     const c = pid.create(defaultParams(pid))
     for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {

@@ -88,12 +88,23 @@ describe('buildRegistry', () => {
     const warn = vi.fn()
     const kept = file('pid')
     const skipped = file('pid')
-    // './another-pid.ts' sorts before './pid.ts', whatever the object key order.
-    const list = buildRegistry({ './pid.ts': skipped, './another-pid.ts': kept }, warn)
+    // './a/pid.ts' sorts before './pid.ts', whatever the object key order.
+    const list = buildRegistry({ './pid.ts': skipped, './a/pid.ts': kept }, warn)
     expect(list).toHaveLength(1)
     expect(list[0].create).toBe(kept.default.create)
     expect(warn).toHaveBeenCalledTimes(1)
     expect(warn.mock.calls[0][0]).toContain('./pid.ts')
+  })
+
+  it('skips a module whose id is not its file name, even a built-in id', () => {
+    const warn = vi.fn()
+    const builtIn = file('pid')
+    const list = buildRegistry({ './another-pid.ts': file('pid'), './pid.ts': builtIn }, warn)
+    expect(list).toHaveLength(1)
+    expect(list[0].create).toBe(builtIn.default.create)
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][0]).toContain('./another-pid.ts')
+    expect(warn.mock.calls[0][0]).toContain('file name')
   })
 
   it('skips non-kebab-case ids with one warning each', () => {

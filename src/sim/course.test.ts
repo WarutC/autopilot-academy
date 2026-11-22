@@ -11,6 +11,14 @@ describe('makeCourse', () => {
     expect(makeCourse(101).rings).not.toEqual(makeCourse(102).rings)
   })
 
+  it('keeps course 101 the same across versions', () => {
+    // A change here changes every shared course number.
+    expect(makeCourse(101).rings.map((r) => r.h)).toEqual([
+      66.65258437674493, 23.89941192837432, 66.32025621831417, 54.19208866264671, 80.37898861570284,
+      62.72705052699894, 22.825694946106523, 44.619856676552445, 57.482498216442764, 34.03771034022793,
+    ])
+  })
+
   it('records the course number', () => {
     expect(makeCourse(4242).number).toBe(4242)
   })

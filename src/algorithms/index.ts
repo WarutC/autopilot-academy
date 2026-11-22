@@ -3,8 +3,7 @@
 // `AlgorithmModule`; the registry finds them, so adding a lesson needs no
 // change anywhere else.
 
-import type { FlightMode } from '../sim/scoring.ts'
-import type { Controller } from '../sim/types.ts'
+import type { Controller, FlightMode } from '../sim/types.ts'
 
 /** How an algorithm can fly a plane; the same union the run and the logbook use. */
 export type AlgorithmMode = FlightMode
@@ -97,7 +96,8 @@ function isAlgorithmModule(value: unknown): value is AlgorithmModule {
  * Turns glob results (file path → module namespace) into the ordered list of
  * algorithms. Files are visited in sorted path order, so when two share an id
  * the first path wins. A file without a valid default export, with a
- * non-kebab-case id, or with a duplicate id is skipped with one warning.
+ * non-kebab-case id, with an id other than its file name, or with a duplicate
+ * id is skipped with one warning.
  */
 export function buildRegistry(
   entries: Record<string, unknown>,
@@ -116,6 +116,11 @@ export function buildRegistry(
     }
     if (!KEBAB_CASE.test(candidate.id)) {
       warn(`Skipping algorithm file ${path}: id "${candidate.id}" is not kebab-case.`)
+      continue
+    }
+    const fileName = path.slice(path.lastIndexOf('/') + 1).replace(/\.ts$/, '')
+    if (candidate.id !== fileName) {
+      warn(`Skipping algorithm file ${path}: id "${candidate.id}" does not match its file name.`)
       continue
     }
     if (byId.has(candidate.id)) {
