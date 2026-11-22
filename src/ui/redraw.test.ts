@@ -29,7 +29,7 @@ function frames(redraw: Redraw, count: number, stepped = false): { draws: number
   return { draws, readouts }
 }
 
-/** The tuning handlers wired as the app wires them: new params rebuild the readout, a marker only redraws. */
+/** Tuning handlers whose new params ask for the readout and whose marker asks only for a draw. */
 function tuning(redraw: Redraw) {
   const items = new Map<string, string>()
   const storage = {
@@ -69,14 +69,13 @@ describe('createRedraw', () => {
     expect(frames(redraw, 5)).toEqual({ draws: 1, readouts: 1 })
   })
 
-  it('marks the readout for one redraw after a lesson switch', () => {
+  it('marks the readout for one redraw after a single readout request', () => {
     const redraw = settled()
-    // The app's lesson switch makes this one call once the new lesson and its params are in place.
     redraw.requestReadout()
     expect(frames(redraw, 5)).toEqual({ draws: 1, readouts: 1 })
   })
 
-  it('marks the readout for one redraw after a theme change', () => {
+  it('marks the readout for one redraw when a theme watcher given requestReadout fires', () => {
     let listener: (() => void) | undefined
     vi.stubGlobal('matchMedia', () => ({
       addEventListener: (_type: string, fn: () => void) => {

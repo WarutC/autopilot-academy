@@ -392,10 +392,13 @@ describe('sceneGeometry: wingman', () => {
   })
 
   it('keeps the rings, the ring count and the altitude line the player\'s', () => {
-    const s = both(plane({ x: 300, h: 50, results: [result(0, true)] }), wing({ x: 300, h: 70, results: [result(0, false), result(1, false)] }))
+    // Just past ring 0, so it is still in view behind the planes.
+    const s = both(plane({ x: 220, h: 50, results: [result(0, true)] }), wing({ x: 220, h: 70, results: [result(0, false), result(1, false)] }))
     const g = sceneGeometry(s, SIZE)
     expect(g.hud.ring).toBe('Ring 2 / 10')
     expect(g.hud.altitude).toBe('Altitude 50 m, target 50 m')
-    expect(g.rings.find((r) => r.index === 0)?.state ?? 'pass').toBe('pass')
+    const ring0 = g.rings.find((r) => r.index === 0)
+    expect(ring0).toBeDefined()
+    expect(ring0!.state).toBe('pass')
   })
 })

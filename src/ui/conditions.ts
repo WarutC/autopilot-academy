@@ -84,7 +84,10 @@ export function defaultConditions(): Conditions {
   return Object.fromEntries(CONDITION_SPECS.map((s) => [s.key, s.default])) as unknown as Conditions
 }
 
-/** `value` clamped and snapped for condition `key`; undefined for an unknown key or a non-finite value. */
+/**
+ * `value` clamped and snapped for condition `key`; undefined for an unknown key
+ * or a non-finite value. The `kalman` toggle snaps to 1 for any non-zero value, else 0.
+ */
 export function clampCondition(key: string, value: number): number | undefined {
   const spec = specOf(key)
   if (!spec || typeof value !== 'number' || !Number.isFinite(value)) return undefined

@@ -55,7 +55,7 @@ describe('appendRun', () => {
   })
 
   it('changes nothing while a plane is flying or without a player result', () => {
-    const rows = old(3)
+    const rows = Object.freeze(old(3).map((r) => Object.freeze(r)))
     for (const run of [
       runOf(result({ status: 'flying' })),
       runOf(result(), result({ status: 'flying' })),
@@ -73,8 +73,14 @@ describe('appendRun', () => {
     expect(appendRun([], runOf(result({ mode: 'manual', points: 50 })), 40).best).toBe(50)
   })
 
-  it('keeps the best for an ineligible, lower, equal or non-finite score', () => {
-    const keep = (player: PlaneResult, wingman?: PlaneResult) => appendRun([], runOf(player, wingman), 40).best
+  it('keeps the best for an ineligible, lower, equal or non-finite score, without touching the old rows', () => {
+    const rows = Object.freeze(old(2).map((r) => Object.freeze(r)))
+    const copy = structuredClone(rows)
+    const keep = (player: PlaneResult, wingman?: PlaneResult) => {
+      const next = appendRun(rows, runOf(player, wingman), 40)
+      expect(next.rows.slice(-2)).toEqual(copy)
+      return next.best
+    }
     expect(keep(result({ points: 30 }))).toBe(40)
     expect(keep(result({ points: 40 }))).toBe(40)
     expect(keep(result({ points: Number.NaN }))).toBe(40)
@@ -84,6 +90,7 @@ describe('appendRun', () => {
     expect(keep(result({ mode: 'semi-auto', points: 90 }))).toBe(40)
     expect(keep(result({ points: 10 }), result({ points: 90 }))).toBe(40)
     expect(appendRun([], runOf(result({ status: 'crashed' })), undefined).best).toBeUndefined()
+    expect(rows).toEqual(copy)
   })
 })
 
