@@ -1,10 +1,12 @@
-// The Flight conditions card: one slider and number row per condition the
-// player can set, built from the condition specs. It stays enabled in every
-// phase; the page decides what a change does to the run.
+// The Flight conditions card: slider and number rows for the downdraft, gusts
+// and altimeter noise, a toggle for the Kalman filter on the altimeter, and a
+// box with the filter's Q and R rows, shown while the filter is on. Built from
+// the condition specs. It stays enabled in every phase; the page decides what
+// a change does to the run.
 
 import type { ParamSpec } from '../algorithms/index.ts'
 import type { Conditions } from '../sim/types.ts'
-import { CARD_CONDITIONS, CONDITION_SPECS } from './conditions.ts'
+import { CARD_CONDITIONS, CONDITION_SPECS, KALMAN_CONDITIONS } from './conditions.ts'
 import { clampValue, formatValue, fromSlider, parseNumber, sliderRange, toSlider } from './params.ts'
 
 export interface ConditionsCardHandlers {
@@ -108,8 +110,47 @@ export function createConditionsCard(
     return row
   }
 
-  const specs = CARD_CONDITIONS.map((key) => CONDITION_SPECS.find((s) => s.key === key)!)
-  list.append(...specs.map(sliderRow))
+  /** The Kalman toggle's row; the box below it shows while the box is checked. */
+  function toggleRow(spec: ParamSpec, onToggle: (on: boolean) => void): HTMLElement {
+    const id = `condition-${spec.key}`
+    const row = doc.createElement('div')
+    row.className = 'param-row param-toggle'
+    const box = doc.createElement('input')
+    box.type = 'checkbox'
+    box.id = id
+    box.className = 'param-check'
+    box.setAttribute('aria-label', spec.accessibleName)
+    box.checked = values[spec.key] !== 0
+    const label = doc.createElement('label')
+    label.htmlFor = id
+    label.className = 'param-label'
+    label.textContent = spec.label
+    box.addEventListener('change', () => {
+      apply(spec, box.checked ? 1 : 0)
+      onToggle(box.checked)
+    })
+    row.append(box, label)
+    return row
+  }
+
+  const specOf = (key: string) => CONDITION_SPECS.find((s) => s.key === key)!
+
+  const kalmanBox = doc.createElement('div')
+  kalmanBox.className = 'kalman-box'
+  const note = doc.createElement('p')
+  note.className = 'kalman-note'
+  note.textContent =
+    'Blends the aircraft model with noisy measurements. Raise Q to trust the model less; raise R to trust the altimeter less.'
+  kalmanBox.append(note, ...KALMAN_CONDITIONS.map((key) => sliderRow(specOf(key))))
+  kalmanBox.hidden = values.kalman === 0
+
+  list.append(
+    ...CARD_CONDITIONS.map((key) => sliderRow(specOf(key))),
+    toggleRow(specOf('kalman'), (on) => {
+      kalmanBox.hidden = !on
+    }),
+    kalmanBox,
+  )
   body.append(list)
   element.append(header, body)
 

@@ -1,13 +1,22 @@
-// Paints the flight recorder: a legend, the target (dashed), the altitude
-// flown (and the wingman's, under it), ring bars colored by result, the elevator command in a lower band,
-// and a labeled vertical marker for every parameter change. Geometry comes
+// Paints the flight recorder: a legend, the target (dashed), the player's
+// altimeter readings as gray dots, the altitude flown (and the wingman's, under
+// it), the Kalman estimate in Amber on top, ring bars colored by result, the
+// elevator command in a lower band, and a labeled vertical marker for every
+// parameter change. Geometry comes
 // from `recorderGeometry`; this only strokes and fills what it returns.
 
 import type { Snapshot } from '../sim/types.ts'
 import type { Theme } from '../ui/theme.ts'
-import { RECORDER_FONT, RECORDER_LINE, recorderGeometry, type LegendKey, type RingBar } from './recorder-geometry.ts'
+import { RECORDER_DOT, RECORDER_FONT, RECORDER_LINE, recorderGeometry, type LegendKey, type RingBar } from './recorder-geometry.ts'
 import { SCENE } from './scene.ts'
 import { TARGET_DASH, type Point, type RingState, type SceneSize } from './scene-geometry.ts'
+
+/** Altimeter readings: a neutral gray, the same in both themes, drawn at `READING_ALPHA`. */
+const READING_COLOR = '#888888'
+const READING_ALPHA = 0.6
+
+/** Dash and gap of the altimeter legend swatch, CSS px. */
+const READING_SWATCH_DASH = [3, 5]
 
 const RING_BAR_COLOR: Record<RingState, string> = {
   pending: SCENE.ringGold,
@@ -87,6 +96,15 @@ export function draw(ctx: CanvasRenderingContext2D, snapshot: Snapshot, theme: T
     ctx.restore()
   }
 
+  if (g.readings.length > 0) {
+    const side = RECORDER_DOT.reading
+    ctx.save()
+    ctx.globalAlpha = READING_ALPHA
+    ctx.fillStyle = READING_COLOR
+    for (const p of g.readings) ctx.fillRect(p.x - side / 2, p.y - side / 2, side, side)
+    ctx.restore()
+  }
+
   // The wingman's line goes under the player's altitude line.
   if (g.wingman.length >= 2) {
     ctx.lineWidth = RECORDER_LINE.altitude
@@ -98,6 +116,13 @@ export function draw(ctx: CanvasRenderingContext2D, snapshot: Snapshot, theme: T
     ctx.lineWidth = RECORDER_LINE.altitude
     ctx.strokeStyle = theme.accent
     polyline(ctx, g.altitude)
+  }
+
+  // The estimate goes on top of the altitude, so it shows where it tracks it.
+  for (const run of g.estimate) {
+    ctx.lineWidth = RECORDER_LINE.estimate
+    ctx.strokeStyle = theme.amber
+    polyline(ctx, run)
   }
 
   if (g.elevator.length >= 2) {
@@ -129,6 +154,8 @@ export function draw(ctx: CanvasRenderingContext2D, snapshot: Snapshot, theme: T
     target: theme.refline,
     altitude: theme.accent,
     wingman: theme.ghost,
+    altimeter: READING_COLOR,
+    estimate: theme.amber,
     elevator: theme.muted,
   }
   ctx.font = `500 ${RECORDER_FONT.legend}px ${theme.fontBody}`
@@ -139,6 +166,9 @@ export function draw(ctx: CanvasRenderingContext2D, snapshot: Snapshot, theme: T
     if (entry.dashed) {
       ctx.setLineDash(TARGET_DASH as number[])
       ctx.lineCap = 'butt'
+    } else if (entry.dotted) {
+      ctx.setLineDash(READING_SWATCH_DASH)
+      ctx.lineCap = 'round'
     }
     ctx.lineWidth = RECORDER_LINE.swatch
     ctx.strokeStyle = swatchColor[entry.key]

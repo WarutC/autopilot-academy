@@ -169,7 +169,7 @@ const poleReadout = createPoleReadout(document)
 const poleCtx = poleReadout.canvas.getContext('2d')!
 side.append(poleReadout.element)
 
-/** The downdraft and gusts; a change reaches the current run at once and every later Fly. */
+/** Every flight condition, from the downdraft to the Kalman filter's Q and R; a change reaches the current run at once and every later Fly. */
 const conditionsCard = createConditionsCard(document, store.conditions, {
   change(key, value) {
     store.setCondition(key, value)

@@ -335,6 +335,18 @@ body {
   width: 100%;
 }
 
+/* The Kalman filter's note and its Q and R rows, under its toggle. */
+.kalman-box {
+  display: grid;
+  gap: 16px;
+}
+
+.kalman-note {
+  margin: 0;
+  font: var(--type-body);
+  color: var(--muted);
+}
+
 .banner-note {
   margin: 4px 0 0;
   font: var(--type-body);
@@ -406,7 +418,8 @@ body {
 .setpoint[hidden],
 .mode-switch[hidden],
 .pole-readout[hidden],
-.pole-readout-plot[hidden] {
+.pole-readout-plot[hidden],
+.kalman-box[hidden] {
   display: none;
 }
 

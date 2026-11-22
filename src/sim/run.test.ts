@@ -4,6 +4,7 @@ import manual from '../algorithms/manual.ts'
 import pAlgorithm from '../algorithms/p.ts'
 import pid from '../algorithms/pid.ts'
 import { makeCourse, refAt } from './course.ts'
+import { createKalman, stepKalman, type KalmanState } from './kalman.ts'
 import { gauss, stream } from './rng.ts'
 import { PLANT, SETPOINT_MAX, SETPOINT_MIN } from './plant.ts'
 import { CALM, createRun, type Run, type RunAlgorithm, type RunOptions } from './run.ts'
@@ -854,5 +855,160 @@ describe('Run wingman', () => {
     expect(row.tags[0]).toBe('wingman')
     expect(row.tags).not.toContain('semi-auto')
     expect(row.rings).toBe(ringsPassed(r.results))
+  })
+})
+
+describe('Run altimeter noise and Kalman filter', () => {
+  const CONTROL_EVERY = Math.round(PLANT.Tc / PLANT.dt)
+  const pidOn = (conditions?: Partial<Conditions>, wingman = false) =>
+    createRun({
+      course: 101,
+      mode: 'autopilot',
+      player: { algorithm: pid, params: defaultParams(pid) },
+      wingman: wingman ? { algorithm: pAlgorithm, params: defaultParams(pAlgorithm) } : undefined,
+      conditions,
+    })
+  /** PID that records the context of every call. */
+  function recording(): { algorithm: RunAlgorithm; seen: ControlContext[] } {
+    const seen: ControlContext[] = []
+    return {
+      seen,
+      algorithm: {
+        id: 'pid',
+        create: (params) => {
+          const inner = pid.create(params)
+          return {
+            compute: (ctx) => {
+              seen.push(ctx)
+              return inner.compute(ctx)
+            },
+          }
+        },
+      },
+    }
+  }
+  const recordedRun = (conditions: Partial<Conditions>) => {
+    const rec = recording()
+    const run = createRun({ course: 101, mode: 'autopilot', player: { algorithm: rec.algorithm, params: defaultParams(pid) }, conditions })
+    return { run, seen: rec.seen }
+  }
+  /** The player's unit samples at each control tick: draws 1, 5, 9 … of its sensor stream. */
+  function tickSamples(ticks: number): number[] {
+    const rng = stream(101, 'sensor:player')
+    const out: number[] = []
+    for (let step = 0; out.length < ticks; step++) {
+      const sample = gauss(rng)
+      if (step % CONTROL_EVERY === 0) out.push(sample)
+    }
+    return out
+  }
+  const rms = (a: number[], b: number[]) => Math.sqrt(a.reduce((sum, x, i) => sum + (x - b[i]!) ** 2, 0) / a.length)
+
+  it('reads the true altitude with zero noise, so the trace and score are unchanged', () => {
+    const { run, seen } = recordedRun({ ...CALM })
+    const base = pidRun()
+    flyToEnd(run)
+    flyToEnd(base)
+    const [, , h, hMeas, hEst] = traceColumns(run.snapshot())
+    expect(hMeas).toEqual(h)
+    expect(hEst).toEqual(h)
+    expect(seen.map((c) => c.h)).toEqual(h)
+    expect(traceColumns(run.snapshot())).toEqual(traceColumns(base.snapshot()))
+    expect(run.result('player')).toEqual(base.result('player'))
+  })
+
+  it('hands the controller the noisy reading and its finite difference without the filter', () => {
+    const { run, seen } = recordedRun({ noise: 2 })
+    run.step(CONTROL_EVERY * 200)
+    const [, , h, hMeas, hEst] = traceColumns(run.snapshot())
+    expect(seen.map((c) => c.h)).toEqual(hMeas)
+    expect(hEst).toEqual(hMeas)
+    const samples = tickSamples(hMeas.length)
+    hMeas.forEach((y, i) => expect(y - h[i]!).toBeCloseTo(2 * samples[i]!, 9))
+    expect(hMeas.filter((y, i) => y !== h[i]).length).toBe(hMeas.length)
+    expect(seen[0]!.v).toBe(0)
+    for (let i = 1; i < seen.length; i++) expect(seen[i]!.v).toBeCloseTo((hMeas[i]! - hMeas[i - 1]!) / PLANT.Tc, 9)
+  })
+
+  it('hands the controller the Kalman estimate, which beats the raw reading', () => {
+    const { run, seen } = recordedRun({ noise: 2, kalman: 1 })
+    flyToEnd(run)
+    const [, , h, hMeas, hEst, u] = traceColumns(run.snapshot())
+    let kf: KalmanState | null = null
+    hMeas.forEach((y, i) => {
+      kf = stepKalman(kf ?? createKalman(y), y, i === 0 ? 0 : u[i - 1]!, 10, 4)
+      expect(seen[i]!.h).toBe(kf.h)
+      expect(seen[i]!.v).toBe(kf.v)
+      expect(hEst[i]).toBe(kf.h)
+      // The first step starts at the reading with no climb, so it lands on it exactly.
+      if (i === 0) expect(hEst[i]).toBe(y)
+      else expect(hEst[i]).not.toBe(y)
+    })
+    expect(rms(hEst, h)).toBeLessThan(rms(hMeas, h))
+  })
+
+  it('starts the filter from the current reading when it is turned on mid-flight', () => {
+    const { run, seen } = recordedRun({ noise: 2 })
+    const N = 50
+    run.step(CONTROL_EVERY * N)
+    run.setEnv('kalman', 1)
+    run.step(1)
+    const [, , , hMeas, hEst, u] = traceColumns(run.snapshot())
+    expect(hMeas.length).toBe(N + 1)
+    const expected = stepKalman(createKalman(hMeas[N]!), hMeas[N]!, u[N - 1]!, 10, 4)
+    expect(hEst[N]).toBe(expected.h)
+    expect(seen[N]!.v).toBe(expected.v)
+    expect(hEst.slice(0, N)).toEqual(hMeas.slice(0, N))
+  })
+
+  it('restarts the filter from the current reading after it is turned off and on', () => {
+    const { run } = recordedRun({ noise: 2, kalman: 1 })
+    run.step(CONTROL_EVERY * 20)
+    run.setEnv('kalman', 0)
+    run.step(CONTROL_EVERY * 5)
+    run.setEnv('kalman', 1)
+    run.step(1)
+    const [, , , hMeas, hEst, u] = traceColumns(run.snapshot())
+    const i = hMeas.length - 1
+    expect(hEst.slice(20, 25)).toEqual(hMeas.slice(20, 25))
+    expect(hEst[i]).toBe(stepKalman(createKalman(hMeas[i]!), hMeas[i]!, u[i - 1]!, 10, 4).h)
+  })
+
+  it('leaves the player unchanged by a wingman under noise, with or without the filter', () => {
+    for (const conditions of [{ noise: 2 }, { noise: 2, kalman: 1 }]) {
+      const lone = pidOn(conditions)
+      const paired = pidOn(conditions, true)
+      flyToEnd(lone)
+      flyToEnd(paired)
+      expect(traceColumns(paired.snapshot())).toEqual(traceColumns(lone.snapshot()))
+      expect(paired.result('player')).toEqual(lone.result('player'))
+    }
+  })
+
+  it('draws the sensor samples while noise is 0, so a late change picks up the same sequence', () => {
+    const N = CONTROL_EVERY * 100
+    const late = pidOn()
+    const fromStart = pidOn({ noise: 2 })
+    late.step(N)
+    fromStart.step(N)
+    late.setEnv('noise', 2)
+    late.step(1)
+    fromStart.step(1)
+    const lateTr = traceColumns(late.snapshot())
+    const startTr = traceColumns(fromStart.snapshot())
+    const i = lateTr[3]!.length - 1
+    const samples = tickSamples(i + 1)
+    expect(lateTr[3]![i]! - lateTr[2]![i]!).toBeCloseTo(2 * samples[i]!, 9)
+    expect(startTr[3]![i]! - startTr[2]![i]!).toBeCloseTo(2 * samples[i]!, 9)
+  })
+
+  it('records the same flight however the steps are batched', () => {
+    const runs = [1, 2, 4].map((n) => {
+      const run = pidOn({ noise: 2, kalman: 1 })
+      flyToEnd(run, n)
+      return traceColumns(run.snapshot())
+    })
+    expect(runs[1]).toEqual(runs[0])
+    expect(runs[2]).toEqual(runs[0])
   })
 })

@@ -1,7 +1,7 @@
 // Everything the flight recorder draws, worked out from a snapshot and the
 // canvas size in CSS pixels: a legend row, the altitude plot with the target,
-// the altitude flown, ring bars and parameter markers, and a lower band for
-// the elevator command. Pure: the renderer only strokes and fills what this returns.
+// the altitude flown, the altimeter readings and the Kalman estimate, ring bars
+// and parameter markers, and a lower band for the elevator command. Pure: the renderer only strokes and fills what this returns.
 
 import { courseFromRings, refAt } from '../sim/course.ts'
 import { PLANT } from '../sim/plant.ts'
@@ -12,6 +12,8 @@ import type { Point, RingState, SceneSize } from './scene-geometry.ts'
 export const RECORDER_LINE = {
   target: 3,
   altitude: 3,
+  /** The Kalman estimate of the altitude. */
+  estimate: 3,
   elevator: 3,
   marker: 3,
   /** Outline of a missed ring bar. */
@@ -27,6 +29,12 @@ export const RECORDER_FONT = {
   axis: 18,
   legend: 18,
 } as const
+
+/** Side of an altimeter reading's square dot, CSS px. */
+export const RECORDER_DOT = { reading: 4 } as const
+
+/** The recorder shows the altimeter reading of every this many trace rows. */
+export const READING_EVERY = 3
 
 /** Space around the recorder content for the axis labels, CSS px. */
 export const PAD = { left: 48, right: 12, top: 8, bottom: 8 } as const
@@ -84,7 +92,7 @@ export interface RingBar {
   readonly state: RingState
 }
 
-export type LegendKey = 'target' | 'altitude' | 'wingman' | 'elevator'
+export type LegendKey = 'target' | 'altitude' | 'wingman' | 'altimeter' | 'estimate' | 'elevator'
 
 export interface LegendEntry {
   readonly key: LegendKey
@@ -96,6 +104,8 @@ export interface LegendEntry {
   readonly swatchX0: number
   readonly swatchX1: number
   readonly dashed: boolean
+  /** The swatch is a dotted line: the altimeter readings. */
+  readonly dotted: boolean
 }
 
 export interface RecorderGeometry {
@@ -111,6 +121,10 @@ export interface RecorderGeometry {
   readonly altitude: readonly Point[]
   /** The wingman's altitude flown; empty without a wingman. */
   readonly wingman: readonly Point[]
+  /** The player's altimeter readings, every `READING_EVERY` rows; empty without noise. */
+  readonly readings: readonly Point[]
+  /** The player's Kalman estimate, one polyline per run of rows where the filter ran; empty when it is off. */
+  readonly estimate: readonly (readonly Point[])[]
   readonly elevator: readonly Point[]
   readonly ringBars: readonly RingBar[]
   readonly markers: readonly MarkerShape[]
@@ -123,6 +137,8 @@ const LEGEND_LABEL: Record<LegendKey, string> = {
   target: 'Target',
   altitude: 'Altitude',
   wingman: 'Wingman',
+  altimeter: 'Altimeter',
+  estimate: 'Kalman estimate',
   elevator: 'Elevator',
 }
 
@@ -159,6 +175,7 @@ function layoutLegend(
       swatchX0: x0,
       swatchX1: x0 + LEGEND_SWATCH,
       dashed: key === 'target',
+      dotted: key === 'altimeter',
     })
     x = x0 + w + LEGEND_SPACING
   }
@@ -189,19 +206,42 @@ export function recorderGeometry(
   const wingmanTrace = snapshot.trace.wingman
   const hasWingman = snapshot.planes.some((p) => p.id === 'wingman')
   const hasWingmanTrace = (wingmanTrace?.length ?? 0) >= 2
+  const noisy = snapshot.conditions.noise > 0
+  const filtered = snapshot.conditions.kalman !== 0
+  const hasReadings = noisy && hasTrace
+
+  // The estimate runs over the rows where the filter ran: an off filter copies
+  // the reading exactly, a running one essentially never lands on it.
+  const estimateRuns: number[][] = []
+  if (filtered && trace) {
+    let run: number[] = []
+    for (let i = 0; i <= n; i++) {
+      if (i < n && trace.hEst[i] !== trace.hMeas[i]) {
+        run.push(i)
+      } else {
+        if (run.length >= 2) estimateRuns.push(run)
+        run = []
+      }
+    }
+  }
+  const hasEstimate = estimateRuns.length > 0
+
   const keys: LegendKey[] = []
   if (hasTarget) keys.push('target')
   if (hasTrace) keys.push('altitude')
   if (hasWingmanTrace) keys.push('wingman')
+  if (hasReadings) keys.push('altimeter')
+  if (hasEstimate) keys.push('estimate')
   if (hasTrace) keys.push('elevator')
   const { entries: legend } = layoutLegend(keys, W, measure)
   // Reserve the rows the full legend needs, so the plot does not move when
-  // the altitude, wingman and elevator entries appear.
-  const { rows } = layoutLegend(
-    hasWingman ? ['target', 'altitude', 'wingman', 'elevator'] : ['target', 'altitude', 'elevator'],
-    W,
-    measure,
-  )
+  // the altitude, wingman, altimeter, estimate and elevator entries appear.
+  const reserve: LegendKey[] = ['target', 'altitude']
+  if (hasWingman) reserve.push('wingman')
+  if (noisy) reserve.push('altimeter')
+  if (filtered) reserve.push('estimate')
+  reserve.push('elevator')
+  const { rows } = layoutLegend(reserve, W, measure)
 
   // Top to bottom: legend rows, altitude plot, gap, elevator band.
   const legendBottom = PAD.top + rows * LEGEND_ROW
@@ -239,6 +279,14 @@ export function recorderGeometry(
   if (wingmanTrace && hasWingmanTrace) {
     for (let i = 0; i < wingmanTrace.length; i++) wingman.push({ x: X(wingmanTrace.t[i]), y: Y(wingmanTrace.h[i]) })
   }
+  const clip = (y: number): number => Math.min(plot.bottom, Math.max(plot.top, y))
+  const readings: Point[] = []
+  if (trace && hasReadings) {
+    for (let i = 0; i < n; i += READING_EVERY) readings.push({ x: X(trace.t[i]), y: clip(Y(trace.hMeas[i])) })
+  }
+  const estimate: Point[][] = trace
+    ? estimateRuns.map((run) => run.map((i) => ({ x: X(trace.t[i]), y: clip(Y(trace.hEst[i])) })))
+    : []
   // The rest of the reference: from the rings, or flat at the player's
   // setpoint in Semi-auto.
   const player = snapshot.planes.find((p) => p.id === 'player')
@@ -251,7 +299,6 @@ export function recorderGeometry(
   }
 
   const results = player?.results ?? []
-  const clip = (y: number): number => Math.min(plot.bottom, Math.max(plot.top, y))
   const ringBars: RingBar[] = snapshot.rings.map((ring, index) => {
     const result = results.find((r) => r.ring === index)
     const state: RingState = !result ? 'pending' : result.pass ? 'pass' : 'miss'
@@ -292,5 +339,21 @@ export function recorderGeometry(
 
   const ticks = [20, 50, 80, 110].map((h) => ({ h, y: Y(h) }))
 
-  return { width: W, height: H, plot, band, tEnd, target, altitude, wingman, elevator, ringBars, markers, legend, ticks }
+  return {
+    width: W,
+    height: H,
+    plot,
+    band,
+    tEnd,
+    target,
+    altitude,
+    wingman,
+    readings,
+    estimate,
+    elevator,
+    ringBars,
+    markers,
+    legend,
+    ticks,
+  }
 }

@@ -38,8 +38,8 @@ export const CONDITION_SPECS: readonly ParamSpec[] = [
   },
   {
     key: 'kalman',
-    label: 'Kalman filter',
-    accessibleName: 'Kalman filter',
+    label: 'Kalman filter on the altimeter',
+    accessibleName: 'Kalman filter on the altimeter',
     min: 0,
     max: 1,
     step: 1,
@@ -52,7 +52,7 @@ export const CONDITION_SPECS: readonly ParamSpec[] = [
     accessibleName: 'Q, process noise',
     min: 0.1,
     max: 1000,
-    step: 0.1,
+    step: 0.01,
     default: 10,
     log: true,
   },
@@ -63,14 +63,17 @@ export const CONDITION_SPECS: readonly ParamSpec[] = [
     unit: 'm²',
     min: 0.1,
     max: 100,
-    step: 0.1,
+    step: 0.01,
     default: 4,
     log: true,
   },
 ]
 
-/** The conditions the Flight conditions card shows rows for. */
-export const CARD_CONDITIONS: readonly (keyof Conditions)[] = ['down', 'gusts']
+/** The conditions the Flight conditions card shows slider rows for, above the Kalman toggle. */
+export const CARD_CONDITIONS: readonly (keyof Conditions)[] = ['down', 'gusts', 'noise']
+
+/** The Kalman filter's tuning, shown in a box under its toggle while it is on. */
+export const KALMAN_CONDITIONS: readonly (keyof Conditions)[] = ['kq', 'kr']
 
 function specOf(key: string): ParamSpec | undefined {
   return CONDITION_SPECS.find((s) => s.key === key)

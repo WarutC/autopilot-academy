@@ -1,7 +1,8 @@
 // One flight: the player's plane, and optionally a wingman beside it, each a
 // plant and its controller stepped on one fixed clock over the same course and
 // conditions, with per-plane recorder traces, ring scoring and the crash and
-// finish checks.
+// finish checks. Each plane reads its altitude through its own noisy altimeter
+// and, when the Kalman filter is on, its controller sees the filter's estimate.
 
 import { clamp } from './clamp.ts'
 import { makeCourse, refAt, type Course } from './course.ts'
@@ -13,7 +14,8 @@ import {
   type PlaneResult,
   type ScoredRun,
 } from './scoring.ts'
-import { gauss, stream } from './rng.ts'
+import { createKalman, stepKalman, type KalmanState } from './kalman.ts'
+import { gauss, stream, type Rng } from './rng.ts'
 import { createTrace, type TraceBuffer } from './trace.ts'
 import type {
   Conditions,
@@ -111,7 +113,8 @@ export interface Run extends ScoredRun {
   setSetpoint(h: number): void
   /**
    * Sets the flight condition `key` (such as `gusts`) to `value`; the physics
-   * uses it from the next physics step and the snapshot shows it at once. It
+   * uses it from the next physics step, the altimeter noise and the Kalman
+   * filter from the next control tick, and the snapshot shows it at once. It
    * never counts as a retune and drops no marker. An unknown key or a
    * non-finite value is ignored.
    */
@@ -140,6 +143,12 @@ interface Plane {
   vEst: number
   /** Previous measurement, or null before the first tick. */
   yPrev: number | null
+  /** The plane's own altimeter noise stream, drawn once per physics step. */
+  readonly sensorRng: Rng
+  /** This physics step's unit-variance altimeter sample. */
+  sensor: number
+  /** The Kalman filter while it is on, else null. */
+  kf: KalmanState | null
   ringIdx: number
   readonly results: RingResult[]
   points: number
@@ -172,6 +181,9 @@ export function createRun(options: RunOptions): Run {
       hEst: PLANT.hStart,
       vEst: 0,
       yPrev: null,
+      sensorRng: stream(course.number, `sensor:${id}`),
+      sensor: 0,
+      kf: null,
       ringIdx: 0,
       results: [],
       points: 0,
@@ -205,12 +217,20 @@ export function createRun(options: RunOptions): Run {
 
   function controlTick(p: Plane, t: number): void {
     const x = p.plant.x
-    // No sensor noise yet: the measurement is the true altitude.
-    const y = p.plant.h
-    p.vEst = p.yPrev === null ? 0 : (y - p.yPrev) / Tc
+    // The altimeter reading: the true altitude plus this step's noise sample.
+    const y = p.plant.h + conditions.noise * p.sensor
+    if (conditions.kalman) {
+      // Started from the current reading, then stepped with the previous command.
+      p.kf = stepKalman(p.kf ?? createKalman(y), y, p.u, conditions.kq, conditions.kr)
+      p.hEst = p.kf.h
+      p.vEst = p.kf.v
+    } else {
+      p.kf = null
+      p.hEst = y
+      p.vEst = p.yPrev === null ? 0 : (y - p.yPrev) / Tc
+    }
     p.yPrev = y
     p.hMeas = y
-    p.hEst = y
     const ref = refOf(p, x)
     const ctx: ControlContext = Object.freeze({
       t,
@@ -271,6 +291,9 @@ export function createRun(options: RunOptions): Run {
     gust += -gust * dt + Math.sqrt(2 * dt) * gauss(gustRng)
     // Drawn once per step, before any plane steps: every plane flies the same air.
     const disturbance = -conditions.down + conditions.gusts * gust
+    // One altimeter sample per plane per step, whatever the noise and whether the
+    // plane still flies, so each plane's sequence depends only on the course.
+    for (const p of planes) p.sensor = gauss(p.sensorRng)
     for (const p of planes) stepPlane(p, tick, t, disturbance)
     k++
   }

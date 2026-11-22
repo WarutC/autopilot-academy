@@ -88,14 +88,22 @@ function setup(conditions = { ...CALM }) {
 }
 
 describe('createConditionsCard', () => {
-  it('builds the heading and rows for the downdraft and gusts only', () => {
+  it('builds the heading and the condition rows in order', () => {
     const { root, byClass, row } = setup({ ...CALM, down: 2.5, gusts: 4 })
     expect(root.className).toBe('card conditions-card')
     expect(root.getAttribute('aria-labelledby')).toBe('conditions-card-title')
     const header = byClass('card-header')[0]!
     expect(header.textContent).toBe('Flight conditions')
     expect(header.id).toBe('conditions-card-title')
-    expect(byClass('param-row')).toHaveLength(2)
+    expect(byClass('param-row')).toHaveLength(6)
+    expect(byClass('param-label').map((l) => l.textContent)).toEqual([
+      'Steady downdraft (m/s²)',
+      'Gusts (m/s², rms)',
+      'Altimeter noise σ (m)',
+      'Kalman filter on the altimeter',
+      'Q, process noise',
+      'R, assumed sensor variance (m²)',
+    ])
     const down = row(0)
     expect(down.label.textContent).toBe('Steady downdraft (m/s²)')
     expect(down.label.htmlFor).toBe('condition-down')
@@ -148,5 +156,70 @@ describe('createConditionsCard', () => {
     field.fire('change')
     expect(field.value).toBe('4')
     expect(change).not.toHaveBeenCalled()
+  })
+
+  it('shows the altimeter noise row', () => {
+    const { change, row } = setup({ ...CALM, noise: 1.5 })
+    const noise = row(2)
+    expect(noise.field.id).toBe('condition-noise')
+    expect(noise.field.value).toBe('1.5')
+    noise.slider.value = '2'
+    noise.slider.fire('input')
+    expect(change).toHaveBeenLastCalledWith('noise', 2)
+  })
+
+  it('toggles the Kalman filter and shows its box at once', () => {
+    const { change, root, byClass } = setup()
+    const check = root.all().find((e) => e.id === 'condition-kalman')!
+    expect(check.type).toBe('checkbox')
+    expect(check.className).toBe('param-check')
+    expect(check.getAttribute('aria-label')).toBe('Kalman filter on the altimeter')
+    expect(byClass('param-toggle')[0]!.all()).toContain(check)
+    const box = byClass('kalman-box')[0]!
+    expect(check.checked).toBe(false)
+    expect(box.hidden).toBe(true)
+    expect(byClass('kalman-note')[0]!.textContent).toBe(
+      'Blends the aircraft model with noisy measurements. Raise Q to trust the model less; raise R to trust the altimeter less.',
+    )
+    const inBox = box.all().filter((e) => e.className === 'param-number').map((e) => e.id)
+    expect(inBox).toEqual(['condition-kq', 'condition-kr'])
+    check.checked = true
+    check.fire('change')
+    expect(change).toHaveBeenLastCalledWith('kalman', 1)
+    expect(box.hidden).toBe(false)
+    check.checked = false
+    check.fire('change')
+    expect(change).toHaveBeenLastCalledWith('kalman', 0)
+    expect(box.hidden).toBe(true)
+    expect(change).toHaveBeenCalledTimes(2)
+  })
+
+  it('starts with the box shown when the filter is on', () => {
+    const { root, byClass } = setup({ ...CALM, kalman: 1 })
+    expect(root.all().find((e) => e.id === 'condition-kalman')!.checked).toBe(true)
+    expect(byClass('kalman-box')[0]!.hidden).toBe(false)
+  })
+
+  it('maps the Q and R sliders on a log scale', () => {
+    const { change, row } = setup({ ...CALM, kq: 10, kr: 4 })
+    const q = row(4)
+    const r = row(5)
+    expect(q.slider.min).toBe(String(Math.log10(0.1)))
+    expect(q.slider.max).toBe('3')
+    expect(q.slider.step).toBe('any')
+    expect(q.slider.value).toBe('1')
+    expect(q.field.value).toBe('10')
+    expect(r.field.value).toBe('4')
+    expect(Number(r.slider.value)).toBeCloseTo(Math.log10(4), 12)
+    q.slider.value = '2'
+    q.slider.fire('input')
+    expect(change).toHaveBeenLastCalledWith('kq', 100)
+    expect(q.field.value).toBe('100')
+    q.slider.value = 'abc'
+    q.slider.fire('input')
+    expect(change).toHaveBeenCalledTimes(1)
+    r.field.value = '0.25'
+    r.field.fire('change')
+    expect(change).toHaveBeenLastCalledWith('kr', 0.25)
   })
 })
