@@ -6,8 +6,10 @@ import { draw as drawScene } from './render/scene.ts'
 import { PLANT } from './sim/plant.ts'
 import { createRun, type Run, type RunPlayer } from './sim/run.ts'
 import type { FlightMode, Snapshot } from './sim/types.ts'
+import { watchAutoPause } from './ui/auto-pause.ts'
 import { createAutopilotCard } from './ui/autopilot-card.ts'
 import { bannerContent, createBanner } from './ui/banner.ts'
+import { createDrawer, PHONE_LANDSCAPE } from './ui/drawer.ts'
 import { createFlight, inFlight, type Phase } from './ui/flight.ts'
 import { createStick, gameKey, typingTarget } from './ui/input.ts'
 import { createModeSwitch } from './ui/mode-switch.ts'
@@ -40,6 +42,7 @@ const main = document.createElement('div')
 main.className = 'layout-main'
 const side = document.createElement('div')
 side.className = 'layout-side'
+side.id = 'cards'
 layout.append(main, side)
 app.append(layout)
 main.append(stage)
@@ -209,6 +212,32 @@ const toolbar = createToolbar(document, {
 toolbar.element.prepend(modeSwitch.element)
 main.append(toolbar.element, recorderCard)
 
+/** Pauses a running flight, so the Paused banner shows; any other phase is left as it is. */
+function pauseRunning(): void {
+  if (flight.phase !== 'running') return
+  flight.togglePause()
+  syncUi()
+}
+
+// Phone landscape: the cards open as a drawer from the right, and opening it releases the stick and pauses the run.
+const drawer = createDrawer(document, {
+  panel: side,
+  onOpen() {
+    stick.releaseAll()
+    pauseRunning()
+    requestDraw()
+  },
+})
+toolbar.element.querySelector('.seg:not(.mode-switch)')!.after(drawer.toggle)
+side.prepend(drawer.close)
+app.append(drawer.scrim)
+
+// On a phone a tap on the recorder expands it to the full viewport width.
+const phoneQuery = `(max-width: 960px), ${PHONE_LANDSCAPE}`
+recorderCanvas.addEventListener('click', () => {
+  if (matchMedia(phoneQuery).matches) recorderCard.classList.toggle('expanded')
+})
+
 const mirror = createScoreMirror(document)
 main.append(mirror.element)
 
@@ -324,13 +353,17 @@ function start(): void {
   resize.observe(canvas)
   resize.observe(recorderCanvas)
   watchPixelRatio()
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) return
+  // A hidden tab or a rotation releases the stick and pauses a running flight.
+  watchAutoPause(window, () => {
     stick.releaseAll()
-    if (flight.phase === 'running') {
-      flight.togglePause()
-      syncUi()
-    }
+    pauseRunning()
+    requestDraw()
+  })
+  const landscape = matchMedia(PHONE_LANDSCAPE)
+  drawer.setActive(landscape.matches)
+  landscape.addEventListener('change', (event) => drawer.setActive(event.matches))
+  matchMedia(phoneQuery).addEventListener('change', (event) => {
+    if (!event.matches) recorderCard.classList.remove('expanded')
   })
   window.addEventListener('blur', () => stick.releaseAll())
   // An edited address selects its lesson and course outside a flight; during one it is put back.
