@@ -8,7 +8,7 @@ import type { Ring, Snapshot } from '../sim/types.ts'
 import type { Theme } from '../ui/theme.ts'
 import { TARGET_DASH, type Point, type SceneSize } from './scene-geometry.ts'
 
-/** Stroke widths in CSS px; none is below the 3 px floor. */
+/** Stroke widths in CSS px. Plot lines hold the 3 px floor; the grid is a hairline. */
 export const RECORDER_LINE = {
   target: 3,
   altitude: 3,

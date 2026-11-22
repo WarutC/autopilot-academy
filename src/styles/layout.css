@@ -224,6 +224,11 @@ body {
   font: var(--type-label);
 }
 
+/* Subscripts keep the label size so no text drops below the floor. */
+.param-label sub {
+  font-size: inherit;
+}
+
 .param-number {
   box-sizing: border-box;
   width: 6em;
