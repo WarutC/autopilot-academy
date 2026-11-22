@@ -124,9 +124,11 @@ export interface Conditions {
 export interface Snapshot {
   readonly t: number
   readonly course: number
+  /** The player first, then the wingman if the run has one; the wingman always flies Autopilot. */
   readonly planes: readonly PlaneSnapshot[]
   readonly rings: readonly Ring[]
   readonly markers: readonly Marker[]
+  /** One trace per plane in `planes`; there is no `wingman` key without a wingman. */
   readonly trace: Readonly<Partial<Record<PlaneId, Trace>>>
   /** The run's current flight conditions. */
   readonly conditions: Readonly<Conditions>

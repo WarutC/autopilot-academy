@@ -3,12 +3,12 @@ import { defaultParams } from '../algorithms/index.ts'
 import manual from '../algorithms/manual.ts'
 import pAlgorithm from '../algorithms/p.ts'
 import pid from '../algorithms/pid.ts'
-import { makeCourse } from './course.ts'
+import { makeCourse, refAt } from './course.ts'
 import { gauss, stream } from './rng.ts'
 import { PLANT, SETPOINT_MAX, SETPOINT_MIN } from './plant.ts'
 import { CALM, createRun, type Run, type RunAlgorithm, type RunOptions } from './run.ts'
 import { ringsPassed, summarize } from './scoring.ts'
-import type { Conditions, ControlContext, Snapshot } from './types.ts'
+import type { Conditions, ControlContext, PlaneId, Snapshot } from './types.ts'
 
 const pidRun = () =>
   createRun({ course: 101, mode: 'autopilot', player: { algorithm: pid, params: defaultParams(pid) } })
@@ -31,8 +31,8 @@ function flyToEnd(run: Run, perCall = 1): void {
   for (let guard = 0; !run.done && guard < 1e6; guard++) run.step(perCall)
 }
 
-const traceColumns = (s: Snapshot) => {
-  const tr = s.trace.player!
+const traceColumns = (s: Snapshot, plane: PlaneId = 'player') => {
+  const tr = s.trace[plane]!
   return (['t', 'ref', 'h', 'hMeas', 'hEst', 'u'] as const).map((c) => Array.from(tr[c].subarray(0, tr.length)))
 }
 
@@ -624,5 +624,235 @@ describe('Run conditions', () => {
     expect(after.planes[0]!.retuned).toBe(false)
     expect(after.markers).toEqual([])
     expect(run.result('player')!.retuned).toBe(false)
+  })
+})
+
+describe('Run wingman', () => {
+  const pidPlayer = () => ({ algorithm: pid, params: defaultParams(pid) })
+  const withWingman = (wingman: RunOptions['wingman'], extra: Partial<RunOptions> = {}) =>
+    createRun({ course: 101, mode: 'autopilot', player: pidPlayer(), wingman, ...extra })
+
+  it('leaves the player unchanged in calm air', () => {
+    const lone = pidRun()
+    const paired = withWingman({ algorithm: pAlgorithm, params: defaultParams(pAlgorithm) })
+    flyToEnd(lone)
+    flyToEnd(paired)
+    expect(traceColumns(paired.snapshot())).toEqual(traceColumns(lone.snapshot()))
+    expect(paired.result('player')).toEqual(lone.result('player'))
+    expect(summarize(paired, 'player')).toEqual(summarize(lone, 'player'))
+    expect(paired.status('player')).toBe(lone.status('player'))
+  })
+
+  it('leaves the player unchanged in gusts, however the steps are batched', () => {
+    const conditions = { gusts: 10 }
+    const lone = createRun({ course: 101, mode: 'autopilot', player: pidPlayer(), conditions })
+    flyToEnd(lone)
+    const loneP = createRun({
+      course: 101,
+      mode: 'autopilot',
+      player: { algorithm: pAlgorithm, params: defaultParams(pAlgorithm) },
+      conditions,
+    })
+    flyToEnd(loneP)
+    for (const n of [1, 2, 4]) {
+      const paired = withWingman({ algorithm: pAlgorithm, params: defaultParams(pAlgorithm) }, { conditions })
+      flyToEnd(paired, n)
+      expect(traceColumns(paired.snapshot())).toEqual(traceColumns(lone.snapshot()))
+      expect(paired.result('player')).toEqual(lone.result('player'))
+      // The wingman flies the same gusts as a lone run of its algorithm.
+      expect(traceColumns(paired.snapshot(), 'wingman')).toEqual(traceColumns(loneP.snapshot()))
+      expect(paired.result('wingman')).toEqual(loneP.result('player'))
+    }
+  })
+
+  it('flies the wingman on the course while the player flies Semi-auto', () => {
+    const course = makeCourse(101)
+    const playerSeen: ControlContext[] = []
+    const wingSeen: ControlContext[] = []
+    const run = createRun({
+      course: 101,
+      mode: 'semi-auto',
+      player: { algorithm: fixed((ctx) => (playerSeen.push(ctx), 0)), params: {} },
+      wingman: { algorithm: fixed((ctx) => (wingSeen.push(ctx), 0)), params: {} },
+    })
+    run.setSetpoint(60)
+    // Track the zero-output wingman's IAE against the course, step by step.
+    let iae = 0
+    for (let i = 0; i < 2000 && run.status('wingman') === 'flying'; i++) {
+      run.step()
+      const w = run.snapshot().planes[1]
+      iae += Math.abs(refAt(course, w.x) - w.h) * PLANT.dt
+    }
+    expect(wingSeen.length).toBeGreaterThan(10)
+    for (const ctx of wingSeen) expect(ctx.input).toBe(0)
+    const last = wingSeen.at(-1)!
+    const s = run.snapshot()
+    const w = s.planes[1]
+    expect(w.mode).toBe('autopilot')
+    expect(w.ref).toBe(refAt(course, w.x))
+    expect(s.planes[0].mode).toBe('semi-auto')
+    expect(playerSeen.at(-1)!.ref).toBe(60)
+    // The last tick was at the wingman's x then; check the course ahead of it too.
+    const xTick = s.trace.wingman!.t[s.trace.wingman!.length - 1] * PLANT.speed
+    expect(last.ref).toBe(refAt(course, xTick))
+    expect(last.refAhead(2)).toBe(refAt(course, xTick + PLANT.speed * 2))
+    expect(last.ref).not.toBe(PLANT.hStart)
+    expect(run.result('wingman')!.iae).toBeCloseTo(iae, 9)
+    expect(run.result('wingman')!.mode).toBe('autopilot')
+  })
+
+  it('passes the stick to the player only in Manual mode', () => {
+    const playerSeen: ControlContext[] = []
+    const wingSeen: ControlContext[] = []
+    const run = createRun({
+      course: 101,
+      mode: 'manual',
+      player: { algorithm: fixed((ctx) => (playerSeen.push(ctx), 0)), params: {} },
+      wingman: { algorithm: fixed((ctx) => (wingSeen.push(ctx), 0)), params: {} },
+    })
+    run.setInput(1)
+    run.step(8)
+    expect(playerSeen.at(-1)!.input).toBe(1)
+    expect(wingSeen.length).toBeGreaterThan(0)
+    for (const ctx of wingSeen) expect(ctx.input).toBe(0)
+    expect(run.snapshot().planes[1].mode).toBe('autopilot')
+    expect(run.snapshot().planes[0].mode).toBe('manual')
+  })
+
+  it('freezes a crashed wingman while the player flies on', () => {
+    const lone = pidRun()
+    const run = withWingman({ algorithm: fixed(() => -1), params: {} })
+    for (let i = 0; i < 1e5 && run.status('wingman') === 'flying'; i++) run.step()
+    expect(run.status('wingman')).toBe('crashed')
+    expect(run.status('player')).toBe('flying')
+    expect(run.done).toBe(false)
+    const before = run.snapshot()
+    const wingBefore = before.planes[1]
+    const columnsBefore = traceColumns(before, 'wingman')
+    const resultBefore = run.result('wingman')
+    run.step(200)
+    const after = run.snapshot()
+    expect(after.planes[1]).toEqual(wingBefore)
+    expect(after.trace.wingman!.length).toBe(before.trace.wingman!.length)
+    expect(traceColumns(after, 'wingman')).toEqual(columnsBefore)
+    expect(run.result('wingman')).toEqual(resultBefore)
+    expect(after.planes[0].x).toBeGreaterThan(before.planes[0].x)
+    flyToEnd(run)
+    flyToEnd(lone)
+    expect(run.done).toBe(true)
+    expect(run.result('player')).toEqual(lone.result('player'))
+    expect(summarize(run, 'wingman')!.tags).toEqual(['wingman', 'crashed'])
+  })
+
+  it('flies the wingman on after the player crashes', () => {
+    const run = createRun({
+      course: 101,
+      mode: 'autopilot',
+      player: { algorithm: fixed(() => -1), params: {} },
+      wingman: pidPlayer(),
+    })
+    for (let i = 0; i < 1e5 && run.status('player') === 'flying'; i++) run.step()
+    expect(run.status('player')).toBe('crashed')
+    expect(run.status('wingman')).toBe('flying')
+    expect(run.done).toBe(false)
+    flyToEnd(run)
+    expect(run.status('wingman')).toBe('finished')
+    expect(run.done).toBe(true)
+  })
+
+  it('ignores setParam on the wingman', () => {
+    const a = withWingman(pidPlayer())
+    const b = withWingman(pidPlayer())
+    a.step(500)
+    b.step(500)
+    b.setParam('wingman', 'Kd', 0.1)
+    flyToEnd(a)
+    flyToEnd(b)
+    expect(b.result('wingman')).toEqual(a.result('wingman'))
+    expect(b.result('wingman')!.retuned).toBe(false)
+    expect(b.result('player')!.retuned).toBe(false)
+    expect(b.snapshot().planes.map((p) => p.retuned)).toEqual([false, false])
+  })
+
+  it('flies the wingman on its own copy of the params', () => {
+    const given = { ...defaultParams(pid) }
+    let received: Readonly<Record<string, number>> | undefined
+    const spy: RunAlgorithm = {
+      id: 'pid',
+      create: (params) => ((received = params), pid.create(params)),
+    }
+    const reference = withWingman(pidPlayer())
+    const run = withWingman({ algorithm: spy, params: given })
+    expect(received).toBeDefined()
+    expect(received).not.toBe(given)
+    expect(received).toEqual(given)
+    for (const key of Object.keys(given)) given[key] = given[key] * 3 + 1
+    flyToEnd(reference)
+    flyToEnd(run)
+    expect(run.result('wingman')).toEqual(reference.result('wingman'))
+  })
+
+  it('gives each plane its own controller when both fly the same algorithm', () => {
+    const lone = pidRun()
+    const run = withWingman(pidPlayer())
+    flyToEnd(lone)
+    flyToEnd(run)
+    const { lesson: _l, ...loneRest } = lone.result('player')!
+    expect(run.result('player')).toEqual(lone.result('player'))
+    const { lesson, ...wingRest } = run.result('wingman')!
+    expect(lesson).toBe('pid')
+    expect(wingRest).toEqual(loneRest)
+    expect(traceColumns(run.snapshot(), 'wingman')).toEqual(traceColumns(lone.snapshot()))
+  })
+
+  it('reports both planes in the snapshot, and only the player without a wingman', () => {
+    const run = withWingman({ algorithm: pAlgorithm, params: defaultParams(pAlgorithm) })
+    run.step(40)
+    const s = run.snapshot()
+    expect(s.planes.map((p) => p.id)).toEqual(['player', 'wingman'])
+    expect(Object.keys(s.trace)).toEqual(['player', 'wingman'])
+    expect(s.trace.wingman!.length).toBeGreaterThan(0)
+    expect(s.trace.wingman!.h).not.toBe(s.trace.player!.h)
+    // The views are the run's live buffers, not copies.
+    run.step(40)
+    expect(run.snapshot().trace.wingman!.h).toBe(s.trace.wingman!.h)
+    const lone = pidRun()
+    lone.step(40)
+    const ls = lone.snapshot()
+    expect(ls.planes).toHaveLength(1)
+    expect(Object.keys(ls.trace)).toEqual(['player'])
+    expect('wingman' in ls.trace).toBe(false)
+  })
+
+  it('has no wingman result or status without a wingman', () => {
+    const run = pidRun()
+    flyToEnd(run)
+    expect(run.result('wingman')).toBeUndefined()
+    expect(run.status('wingman')).toBeUndefined()
+    expect(summarize(run, 'wingman')).toBeUndefined()
+  })
+
+  it('reports the wingman result and summarizes it as a wingman row', () => {
+    const run = createRun({
+      course: 101,
+      mode: 'semi-auto',
+      player: pidPlayer(),
+      wingman: { algorithm: pAlgorithm, params: defaultParams(pAlgorithm) },
+    })
+    flyToEnd(run)
+    const r = run.result('wingman')!
+    expect(r.lesson).toBe(pAlgorithm.id)
+    expect(r.mode).toBe('autopilot')
+    expect(r.course).toBe(101)
+    expect(r.ringsTotal).toBe(10)
+    expect(r.retuned).toBe(false)
+    expect(r.status).toBe(run.status('wingman'))
+    expect(r.points).toBe(run.snapshot().planes[1].points)
+    expect(r.energy).toBeGreaterThan(0)
+    const row = summarize(run, 'wingman')!
+    expect(row.lesson).toBe(pAlgorithm.id)
+    expect(row.tags[0]).toBe('wingman')
+    expect(row.tags).not.toContain('semi-auto')
+    expect(row.rings).toBe(ringsPassed(r.results))
   })
 })

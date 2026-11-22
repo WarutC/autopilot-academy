@@ -1,5 +1,7 @@
-// One flight: the plant and its controller stepped on a fixed clock, with the
-// recorder trace, ring scoring and the crash and finish checks.
+// One flight: the player's plane, and optionally a wingman beside it, each a
+// plant and its controller stepped on one fixed clock over the same course and
+// conditions, with per-plane recorder traces, ring scoring and the crash and
+// finish checks.
 
 import { clamp } from './clamp.ts'
 import { makeCourse, refAt, type Course } from './course.ts'
@@ -64,14 +66,26 @@ export interface RunOptions {
   readonly player: RunPlayer
   /** Flight conditions; any key left out is calm. */
   readonly conditions?: Partial<Conditions>
+  /**
+   * A second plane flown beside the player on the same course, conditions,
+   * gusts and clock. It always flies Autopilot against the course, whatever
+   * `mode` says, on a copy of `params` made here; `setParam`, `setInput` and
+   * `setSetpoint` never change it. Adding it never changes the player's flight.
+   */
+  readonly wingman?: RunPlayer
 }
 
 export interface Run extends ScoredRun {
-  /** Advances the flight by `n` physics steps; planes that are not flying stay frozen. */
+  /**
+   * Advances the flight by `n` physics steps, or fewer once no plane is flying;
+   * a plane that is not flying stays frozen while the other flies on.
+   */
   step(n?: number): void
+  /** Planes are `[player]`, or `[player, wingman]`; `trace.wingman` exists only with a wingman. */
   snapshot(): Snapshot
+  /** The plane's status (the player by default), or undefined for a plane the run does not have. */
   status(plane?: PlaneId): PlaneStatus | undefined
-  /** True when no plane is flying. */
+  /** True when no plane is flying: the player, and the wingman if there is one. */
   readonly done: boolean
   /**
    * Sets the player's parameter `key` to `value`; the controller reads it on
@@ -139,31 +153,39 @@ export function createRun(options: RunOptions): Run {
   const { speed, dt, Tc } = PLANT
   const rows = Math.ceil(course.endX / speed / Tc) + 2
 
-  const params: Record<string, number> = { ...options.player.params }
-  const player: Plane = {
-    id: 'player',
-    lesson: options.player.algorithm.id,
-    mode: options.mode,
-    params,
-    controller: options.player.algorithm.create(params),
-    retuned: false,
-    stick: 0,
-    setpoint: PLANT.hStart,
-    status: 'flying',
-    plant: initialPlant(),
-    u: 0,
-    hMeas: PLANT.hStart,
-    hEst: PLANT.hStart,
-    vEst: 0,
-    yPrev: null,
-    ringIdx: 0,
-    results: [],
-    points: 0,
-    iae: 0,
-    energy: 0,
-    trace: createTrace(rows),
+  /** A fresh plane at the start, flying `from`'s algorithm on the run's own copy of its params. */
+  function makePlane(id: PlaneId, mode: FlightMode, from: RunPlayer): Plane {
+    const params: Record<string, number> = { ...from.params }
+    return {
+      id,
+      lesson: from.algorithm.id,
+      mode,
+      params,
+      controller: from.algorithm.create(params),
+      retuned: false,
+      stick: 0,
+      setpoint: PLANT.hStart,
+      status: 'flying',
+      plant: initialPlant(),
+      u: 0,
+      hMeas: PLANT.hStart,
+      hEst: PLANT.hStart,
+      vEst: 0,
+      yPrev: null,
+      ringIdx: 0,
+      results: [],
+      points: 0,
+      iae: 0,
+      energy: 0,
+      trace: createTrace(rows),
+    }
   }
-  const planes: readonly Plane[] = [player]
+
+  // The player is made first, so its controller never depends on the wingman's.
+  const player = makePlane('player', options.mode, options.player)
+  // The wingman always flies Autopilot: its reference is the course.
+  const wingman = options.wingman ? makePlane('wingman', 'autopilot', options.wingman) : undefined
+  const planes: readonly Plane[] = wingman ? [player, wingman] : [player]
   const markers: Marker[] = []
   /** Replaced, never mutated, on each change, so a snapshot's record stays as it was. */
   let conditions: Readonly<Conditions> = withConditions(CALM, options.conditions)
@@ -247,6 +269,7 @@ export function createRun(options: RunOptions): Run {
     const tick = k % CONTROL_EVERY === 0
     const t = k * dt
     gust += -gust * dt + Math.sqrt(2 * dt) * gauss(gustRng)
+    // Drawn once per step, before any plane steps: every plane flies the same air.
     const disturbance = -conditions.down + conditions.gusts * gust
     for (const p of planes) stepPlane(p, tick, t, disturbance)
     k++
@@ -292,7 +315,9 @@ export function createRun(options: RunOptions): Run {
         planes: planes.map(planeSnapshot),
         rings: course.rings,
         markers: markers.slice(),
-        trace: { player: traceView(player.trace) },
+        trace: wingman
+          ? { player: traceView(player.trace), wingman: traceView(wingman.trace) }
+          : { player: traceView(player.trace) },
         conditions,
       }
     },
