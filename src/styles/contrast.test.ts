@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { READING_ALPHA, RING_BAR_OUTLINE_TOKEN } from '../render/recorder.ts'
 import { cssVarName } from '../ui/theme.ts'
-import layoutCss from './layout.css?raw'
 import { contrast, over, themeTokens } from './css-test-helpers.ts'
+import layoutCss from './layout.css?raw'
 import tokensCss from './tokens.css?raw'
 
 /** The share of Ghost in the wingman logbook tag's text color, mixed with Ink in layout.css. */

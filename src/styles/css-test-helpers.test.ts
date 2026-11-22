@@ -34,6 +34,10 @@ describe('css text helpers', () => {
     expect(blockAfter(css, css.indexOf('@media'))).toBe(' .p { q: 1; } .r { s: 2; } ')
   })
 
+  it('throws on a missed start position instead of reading the first block', () => {
+    expect(() => blockAfter('a { b }', 'a { b }'.indexOf('@media'))).toThrow(/no start position/)
+  })
+
   it('finds a rule by one selector in a selector list', () => {
     const css = '/* .b { color: red; } */ .a, .b ,.c { color: blue; } .b { color: green; }'
     expect(ruleBody(css, '.b')).toBe(' color: blue; ')

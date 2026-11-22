@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import layoutCss from '../styles/layout.css?raw'
 import { contrast, ruleBody as cssRuleBody, themeTokens } from '../styles/css-test-helpers.ts'
+import layoutCss from '../styles/layout.css?raw'
 import tokensCss from '../styles/tokens.css?raw'
 import {
   ABOUT_INTRO,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import layoutCss from '../styles/layout.css?raw'
 import { contrast, rgbaOver, ruleBody, themeTokens } from '../styles/css-test-helpers.ts'
+import layoutCss from '../styles/layout.css?raw'
 import tokensCss from '../styles/tokens.css?raw'
 import {
   createMascot,

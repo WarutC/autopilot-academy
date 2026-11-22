@@ -1,6 +1,6 @@
 // Helpers for the CSS and contrast tests: reading blocks, rules and tokens out
 // of stylesheet text, and WCAG contrast arithmetic on `#RRGGBB` colors.
-// Each function takes the CSS text as an argument; this module imports no CSS.
+// This module imports no CSS; the CSS readers take stylesheet text as an argument.
 
 export type Tokens = Record<string, string>
 
@@ -8,6 +8,7 @@ const COMMENT = /\/\*[\s\S]*?\*\//g
 
 /** The text between the brace that opens after `from` and its matching close. */
 export function blockAfter(css: string, from: number): string {
+  if (from < 0) throw new Error('no start position: the search for it missed')
   const open = css.indexOf('{', from)
   if (open < 0) throw new Error('no block after the given position')
   let depth = 0
