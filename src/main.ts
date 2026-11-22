@@ -9,6 +9,7 @@ import type { Run, RunPlayer } from './sim/run.ts'
 import type { PlaneResult } from './sim/scoring.ts'
 import type { FlightMode, Snapshot } from './sim/types.ts'
 import { createAbout } from './ui/about.ts'
+import { createAboutController } from './ui/about-controller.ts'
 import { watchAutoPause } from './ui/auto-pause.ts'
 import { createAutopilotCard } from './ui/autopilot-card.ts'
 import { bannerContent, createBanner } from './ui/banner.ts'
@@ -287,46 +288,30 @@ aboutLink.textContent = 'About'
 side.append(aboutLink)
 
 /** The About page, shown in place of the flight; Close or Escape lands back on the lesson route. */
-const about = createAbout(document, {
-  onClose() {
-    closeAbout()
-    router.restore(store.lesson, store.course)
-  },
-})
+const about = createAbout(document, { onClose: () => aboutController.dismiss() })
 app.after(about.element)
-
-/** Shows About in place of the flight and pauses a running flight; closing never resumes it. */
-function openAbout(): void {
-  if (about.isOpen) return
-  const clicked = clickedAboutLink
-  clickedAboutLink = null
-  const focused = document.activeElement as HTMLElement | null
-  // From the open drawer focus goes back to Cards, since the drawer is closed by then.
-  const opener = drawer.isOpen
-    ? drawer.toggle
-    : (clicked ?? (focused && focused !== document.body ? focused : null))
-  drawer.closeDrawer()
-  releaseAndPause()
-  app.hidden = true
-  about.open(opener)
-}
-
-/** Hides About and shows the flight again. */
-function closeAbout(): void {
-  if (!about.isOpen) return
-  clickedAboutLink = null
-  // Shown first, so the opener inside the flight can take focus back.
-  app.hidden = false
-  about.close()
-  requestReadout()
-}
 
 // The header is clipped on compact screens, so its link leaves the tab order there.
 const siteBrand = document.querySelector<HTMLAnchorElement>('.site-brand')
 
-/** The About link last clicked; Safari does not focus a clicked link, so the opener is recorded here. */
-let clickedAboutLink: HTMLElement | null = null
-for (const link of [aboutLink, siteBrand]) link?.addEventListener('click', () => (clickedAboutLink = link))
+const aboutController = createAboutController({
+  about,
+  drawer,
+  app,
+  router,
+  history,
+  pause: releaseAndPause,
+  // A resize while About showed left the canvases unpainted.
+  redraw: requestReadout,
+  current: () => ({ lesson: store.lesson, course: store.course }),
+  focused: () => {
+    const focused = document.activeElement as HTMLElement | null
+    return focused && focused !== document.body ? focused : null
+  },
+  // The About link, then Cards in phone landscape where the link is in the closed drawer, then the header.
+  fallbacks: () => [aboutLink, drawer.toggle, siteBrand],
+})
+for (const link of [aboutLink, siteBrand]) link?.addEventListener('click', (event) => aboutController.linkClicked(link, event))
 function syncBrandFocus(compact: boolean): void {
   if (siteBrand) siteBrand.tabIndex = compact ? -1 : 0
 }
@@ -473,13 +458,13 @@ function start(): void {
     selectLesson,
     loadCourse,
     current: () => ({ lesson: store.lesson, course: store.course }),
-    about: (open) => (open ? openAbout() : closeAbout()),
+    about: (open) => (open ? aboutController.open('address') : aboutController.close()),
   })
   // A load at the About route opens it once everything is set up; the stored lesson and course stay.
-  if (route.about) openAbout()
+  if (route.about) aboutController.open('load')
   window.addEventListener('keydown', (event) => {
     const direction = gameKey(event)
-    if (!direction || about.isOpen || !flysByHand(lesson) || typingTarget(document.activeElement as HTMLElement | null)) return
+    if (!direction || aboutController.blocksGameKeys() || !flysByHand(lesson) || typingTarget(document.activeElement as HTMLElement | null)) return
     event.preventDefault()
     if (!event.repeat) stick.press(direction, `key:${event.key.toLowerCase()}`)
   })
