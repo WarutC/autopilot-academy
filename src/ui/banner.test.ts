@@ -50,6 +50,19 @@ describe('bannerContent', () => {
     })
   })
 
+  it('says New course loaded when ready with a loaded course', () => {
+    expect(bannerContent('ready', undefined, 555)).toEqual({
+      title: 'New course loaded',
+      body: 'Course 555. Share the number so classmates fly the same rings.',
+    })
+  })
+
+  it('ignores a loaded course outside the ready phase', () => {
+    expect(bannerContent('running', result('flying'), 555)).toBeUndefined()
+    expect(bannerContent('paused', result('flying'), 555)?.title).toBe('Paused')
+    expect(bannerContent('ended', result('finished', 74.2, 8, 10), 555)?.title).toBe('Mission complete')
+  })
+
   it('shows nothing while running', () => {
     expect(bannerContent('running', result('flying'))).toBeUndefined()
   })

@@ -47,7 +47,16 @@ export function defaultMode(module: AlgorithmModule): FlightMode {
   return module.modes.includes('autopilot') ? 'autopilot' : module.modes[0]!
 }
 
-export function createStore(modules: readonly AlgorithmModule[], getStorage: StorageGetter): Store {
+export interface StoreOptions {
+  /** Called after each change of the lesson or the course, never for a no-op. */
+  onRouteChange?(lesson: string, course: number): void
+}
+
+export function createStore(
+  modules: readonly AlgorithmModule[],
+  getStorage: StorageGetter,
+  options: StoreOptions = {},
+): Store {
   const phase = createPhase()
   let settings: Settings = loadSettings(getStorage, modules)
   const find = (id: string) => modules.find((m) => m.id === id)
@@ -55,6 +64,10 @@ export function createStore(modules: readonly AlgorithmModule[], getStorage: Sto
   function update(next: Partial<Settings>): void {
     settings = { ...settings, ...next }
     saveSettings(getStorage, settings)
+  }
+
+  function routeChanged(): void {
+    options.onRouteChange?.(settings.lesson, settings.course)
   }
 
   return {
@@ -70,6 +83,7 @@ export function createStore(modules: readonly AlgorithmModule[], getStorage: Sto
     setLesson(id) {
       if (!find(id) || id === settings.lesson) return
       update({ lesson: id })
+      routeChanged()
     },
     mode(id) {
       const module = find(id)
@@ -97,8 +111,9 @@ export function createStore(modules: readonly AlgorithmModule[], getStorage: Sto
       return settings.course
     },
     setCourse(course) {
-      if (!validCourse(course)) return
+      if (!validCourse(course) || course === settings.course) return
       update({ course })
+      routeChanged()
     },
   }
 }

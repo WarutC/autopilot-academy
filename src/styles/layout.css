@@ -101,6 +101,38 @@ body {
   outline-offset: 2px;
 }
 
+/* The Course number field and its visible label. */
+.course-label {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--ink);
+  font: var(--type-control);
+}
+
+.course-field {
+  box-sizing: border-box;
+  width: 5.5em;
+  min-height: 48px;
+  padding: 8px 12px;
+  background: var(--field);
+  color: var(--ink);
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  font: var(--type-number);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.course-field:disabled {
+  opacity: 0.45;
+}
+
+.course-field:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
 /* Lift a focused segment so its neighbours do not paint over the ring. */
 .seg-btn:focus-visible {
   position: relative;

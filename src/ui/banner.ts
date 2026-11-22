@@ -1,6 +1,6 @@
-// The banner over the scene: Ready for takeoff, Paused, Crashed or Mission
-// complete. A persistent live region announces it; the visible box inside it
-// is added or removed, and never takes input.
+// The banner over the scene: Ready for takeoff, New course loaded, Paused,
+// Crashed or Mission complete. A persistent live region announces it; the
+// visible box inside it is added or removed, and never takes input.
 
 import { ringsPassed, type PlaneResult } from '../sim/scoring.ts'
 import type { Phase } from './flight.ts'
@@ -12,8 +12,21 @@ export interface BannerContent {
   readonly note?: string
 }
 
-/** What the banner says for a phase and the player's result; undefined hides it. */
-export function bannerContent(phase: Phase, result: PlaneResult | undefined): BannerContent | undefined {
+/**
+ * What the banner says for a phase and the player's result; undefined hides it.
+ * `loadedCourse` is a course the player just loaded, announced while the flight is ready.
+ */
+export function bannerContent(
+  phase: Phase,
+  result: PlaneResult | undefined,
+  loadedCourse?: number,
+): BannerContent | undefined {
+  if (phase === 'ready' && loadedCourse !== undefined) {
+    return {
+      title: 'New course loaded',
+      body: `Course ${loadedCourse}. Share the number so classmates fly the same rings.`,
+    }
+  }
   if (phase === 'ready') return { title: 'Ready for takeoff', body: 'Pick an autopilot, then press Fly.' }
   if (phase === 'paused') return { title: 'Paused', body: 'Retune freely. Changes apply the moment you resume.' }
   if (phase !== 'ended' || !result) return undefined

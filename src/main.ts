@@ -11,7 +11,8 @@ import { bannerContent, createBanner } from './ui/banner.ts'
 import { createFlight, inFlight, type Phase } from './ui/flight.ts'
 import { createStick, gameKey, typingTarget } from './ui/input.ts'
 import { createModeSwitch } from './ui/mode-switch.ts'
-import { browserStorage } from './ui/persistence.ts'
+import { browserStorage, validCourse } from './ui/persistence.ts'
+import { createRouter, drawCourse, parseRoute } from './ui/router.ts'
 import { createScoreMirror } from './ui/score-mirror.ts'
 import { createSetpointSlider } from './ui/setpoint-slider.ts'
 import { createStickButtons } from './ui/stick-buttons.ts'
@@ -60,8 +61,15 @@ recorderBody.className = 'card-body'
 recorderBody.append(recorderCanvas)
 recorderCard.append(recorderTitle, recorderBody)
 
+/** The address: `#/lesson/<id>?course=<n>`, rewritten after every lesson or course change. */
+const router = createRouter(window)
 /** The remembered lesson, modes, params and course, and the flight phase. */
-const store = createStore(algorithms, browserStorage)
+const store = createStore(algorithms, browserStorage, { onRouteChange: (l, c) => router.write(l, c) })
+// On load the address wins over the remembered lesson and course.
+const route = parseRoute(router.read(), algorithms)
+if (route.lesson !== undefined) store.setLesson(route.lesson)
+if (route.course !== undefined) store.setCourse(route.course)
+router.write(store.lesson, store.course)
 /** The selected lesson. */
 let lesson: AlgorithmModule = findAlgorithm(store.lesson) ?? algorithms[0]!
 /** The player's autopilot; each Fly starts a run with the current one. */
@@ -70,6 +78,9 @@ let player: RunPlayer = { algorithm: lesson, params: store.params(lesson.id) }
 /** A lesson whose modes include Manual flies by hand with the stick. */
 const flysByHand = (m: AlgorithmModule) => m.modes.includes('manual')
 const runMode = (): FlightMode => store.mode(lesson.id)
+
+/** A course the player just loaded, announced by the banner until Fly, a lesson or a mode change. */
+let loadedCourse: number | undefined
 
 /** The player's target altitude in Semi-auto; it keeps its value across runs. */
 let setpoint: number = PLANT.hStart
@@ -108,6 +119,7 @@ const modeSwitch = createModeSwitch(document, {
   select(mode) {
     if (!lesson.modes.includes(mode)) return
     store.setMode(lesson.id, mode)
+    loadedCourse = undefined
     if (inFlight(flight.phase)) flight.fly()
     else flight.reset()
     syncUi()
@@ -137,26 +149,45 @@ const autopilotCard = createAutopilotCard(document, algorithms, lesson.id, playe
       requestDraw()
     }
   },
-  select(id) {
-    const next = findAlgorithm(id)
-    if (!next || inFlight(flight.phase) || next.id === lesson.id) return
-    store.setLesson(next.id)
-    lesson = next
-    player = { algorithm: next, params: store.params(next.id) }
-    autopilotCard.setLesson(next, player.params)
-    stickButtons.setVisible(flysByHand(next))
-    stick.releaseAll()
-    // Outside a flight the run is the next flight's preview, so show it in the new lesson's mode.
-    if (!inFlight(flight.phase)) flight.reset()
-    syncMode()
-    requestDraw()
-  },
+  select: selectLesson,
 })
 side.append(autopilotCard.element)
+
+/** Switches to another lesson outside a flight, from a chip or the address. */
+function selectLesson(id: string): void {
+  const next = findAlgorithm(id)
+  if (!next || inFlight(flight.phase) || next.id === lesson.id) return
+  store.setLesson(next.id)
+  lesson = next
+  player = { algorithm: next, params: store.params(next.id) }
+  autopilotCard.setLesson(next, player.params)
+  stickButtons.setVisible(flysByHand(next))
+  stick.releaseAll()
+  loadedCourse = undefined
+  // Outside a flight the run is the next flight's preview, so show it in the new lesson's mode.
+  flight.reset()
+  syncMode()
+  syncUi()
+  requestDraw()
+}
+
+/** Loads another course outside a flight, from the field, New course or the address. */
+function loadCourse(course: number): void {
+  if (!validCourse(course) || inFlight(flight.phase) || course === store.course) return
+  store.setCourse(course)
+  loadedCourse = course
+  // The ready preview shows the new course's rings, not a dev fixture.
+  delete canvas.dataset.fixture
+  fixture = undefined
+  flight.reset()
+  syncUi()
+  requestDraw()
+}
 
 const toolbar = createToolbar(document, {
   fly() {
     flight.fly()
+    loadedCourse = undefined
     delete canvas.dataset.fixture
     fixture = undefined
     syncUi()
@@ -169,6 +200,10 @@ const toolbar = createToolbar(document, {
   setSpeed(speed) {
     flight.setSpeed(speed)
     syncUi()
+  },
+  setCourse: loadCourse,
+  newCourse() {
+    loadCourse(drawCourse(Math.random, store.course))
   },
 })
 toolbar.element.prepend(modeSwitch.element)
@@ -188,16 +223,18 @@ function requestDraw(): void {
 
 let bannerPhase: Phase | undefined
 let bannerRun: Run | undefined
+let bannerCourse: number | undefined
 
 /** Reflects the flight into the toolbar and the banner; cheap, so it runs every frame. */
 function syncUi(): void {
-  toolbar.update(flight.phase, flight.speed)
+  toolbar.update(flight.phase, flight.speed, store.course)
   autopilotCard.setPhase(flight.phase)
-  // The banner depends only on the phase and the run's result, so recompute it when either changes.
-  if (flight.phase !== bannerPhase || flight.run !== bannerRun) {
+  // The banner depends only on the phase, the run's result and a loaded course, so recompute it when one changes.
+  if (flight.phase !== bannerPhase || flight.run !== bannerRun || loadedCourse !== bannerCourse) {
     bannerPhase = flight.phase
     bannerRun = flight.run
-    banner.update(bannerContent(flight.phase, flight.run.result('player')))
+    bannerCourse = loadedCourse
+    banner.update(bannerContent(flight.phase, flight.run.result('player'), loadedCourse))
   }
 }
 
@@ -296,6 +333,15 @@ function start(): void {
     }
   })
   window.addEventListener('blur', () => stick.releaseAll())
+  // An edited address selects its lesson and course outside a flight; during one it is put back.
+  router.onChange((hash) => {
+    if (!inFlight(flight.phase)) {
+      const next = parseRoute(hash, algorithms)
+      if (next.lesson !== undefined) selectLesson(next.lesson)
+      if (next.course !== undefined) loadCourse(next.course)
+    }
+    router.write(store.lesson, store.course)
+  })
   window.addEventListener('keydown', (event) => {
     const direction = gameKey(event)
     if (!direction || !stickVisible() || typingTarget(document.activeElement as HTMLElement | null)) return

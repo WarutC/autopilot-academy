@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { defaultParams } from '../algorithms/index.ts'
 import manual from '../algorithms/manual.ts'
 import pid from '../algorithms/pid.ts'
@@ -96,6 +96,26 @@ describe('createStore', () => {
     const other = createStore(modules, () => failing)
     other.setCourse(303)
     expect(other.course).toBe(303)
+  })
+
+  it('reports each real lesson or course change once, and nothing else', () => {
+    const onRouteChange = vi.fn()
+    const store = createStore(modules, fakeStorage().get, { onRouteChange })
+    store.setLesson('pid')
+    store.setLesson('nope')
+    store.setCourse(101)
+    store.setCourse(0)
+    store.setMode('pid', 'semi-auto')
+    store.setParam('pid', 'Kp', 0.5)
+    store.setPhase('running')
+    expect(onRouteChange).not.toHaveBeenCalled()
+    store.setLesson('manual')
+    store.setCourse(555)
+    store.setCourse(555)
+    expect(onRouteChange.mock.calls).toEqual([
+      ['manual', 101],
+      ['manual', 555],
+    ])
   })
 
   it('does not save the phase', () => {
