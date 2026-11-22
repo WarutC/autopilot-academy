@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { algorithms, defaultParams } from '../algorithms/index.ts'
+import dampedP from '../algorithms/fixtures/damped-p.ts'
+import { algorithms, BUILT_IN_ORDER, buildRegistry, defaultParams, type AlgorithmModule } from '../algorithms/index.ts'
 import manual from '../algorithms/manual.ts'
 import pid from '../algorithms/pid.ts'
 import { createAutopilotCard, type AutopilotCardHandlers } from './autopilot-card.ts'
@@ -286,5 +287,87 @@ describe('createAutopilotCard', () => {
     card.setLesson(manual, {})
     card.setPhase('running')
     expect(live('lesson-chip').map((c) => c.disabled)).toEqual(algorithms.map((m) => m.id !== 'manual'))
+  })
+})
+
+describe('createAutopilotCard with a contributed module', () => {
+  /** A built-in stand-in: enough of a module for a chip. */
+  const stub = (id: string): AlgorithmModule => ({
+    id,
+    name: id.toUpperCase(),
+    tag: `Tag ${id}`,
+    lesson: 'Stub. Try: nothing.',
+    modes: ['autopilot'],
+    params: [],
+    create: () => ({ compute: () => 0 }),
+  })
+
+  function setupCommunity() {
+    const entries: Record<string, unknown> = { './damped-p.ts': { default: dampedP } }
+    for (const id of BUILT_IN_ORDER) entries[`./${id}.ts`] = { default: stub(id) }
+    const warn = vi.fn()
+    const registry = buildRegistry(entries, warn)
+    const handlers: AutopilotCardHandlers = { change: vi.fn(), commit: vi.fn(), select: vi.fn() }
+    const card = createAutopilotCard(
+      new FakeDoc() as unknown as Document,
+      registry,
+      dampedP.id,
+      defaultParams(dampedP),
+      handlers,
+    )
+    const root = card.element as unknown as FakeElement
+    const byClass = (c: string) => root.all().filter((e) => e.className.split(' ').includes(c))
+    return { registry, warn, root, byClass }
+  }
+
+  it('registers the module last, after MPC, as Community', () => {
+    const { registry, warn } = setupCommunity()
+    expect(warn).not.toHaveBeenCalled()
+    expect(registry.map((m) => m.id)).toEqual([...BUILT_IN_ORDER, 'damped-p'])
+    expect(registry[11]).toMatchObject({ id: 'damped-p', community: true })
+    expect(registry[10]).toMatchObject({ id: 'mpc', community: false })
+  })
+
+  it('reads "Community" in place of the tag on its chip, in text and accessible name', () => {
+    const { byClass } = setupCommunity()
+    const chips = byClass('lesson-chip')
+    expect(chips).toHaveLength(12)
+    const chip = chips[11]!
+    expect(chip.className.split(' ')).toContain('lesson-chip-community')
+    expect(chip.children.map((c) => (typeof c === 'string' ? c : c.textContent))).toEqual([
+      'Lesson 12',
+      'Damped P',
+      'Community',
+    ])
+    expect(chip.getAttribute('aria-label')).toBe('Lesson 12, Damped P, Community')
+    expect(chip.textContent).not.toContain(dampedP.tag)
+  })
+
+  it('leaves built-in chips showing their own tag', () => {
+    const { byClass } = setupCommunity()
+    const chips = byClass('lesson-chip')
+    BUILT_IN_ORDER.forEach((id, i) => {
+      const chip = chips[i]!
+      expect(chip.className).toBe('lesson-chip')
+      const tag = chip.all().find((e) => e.className === 'lesson-chip-tag')!
+      expect(tag.textContent).toBe(`Tag ${id}`)
+      expect(chip.getAttribute('aria-label')).toBe(`Lesson ${i + 1}, ${id.toUpperCase()}, Tag ${id}`)
+    })
+  })
+
+  it('builds one row per parameter from its ParamSpec list', () => {
+    const { byClass } = setupCommunity()
+    expect(byClass('autopilot-name')[0]!.textContent).toBe('Damped P')
+    const rows = byClass('param-row')
+    expect(rows).toHaveLength(dampedP.params.length)
+    dampedP.params.forEach((spec, i) => {
+      const inner = rows[i]!.all()
+      const field = inner.find((e) => e.className === 'param-number')!
+      const slider = inner.find((e) => e.className === 'param-slider')!
+      expect(inner.find((e) => e.className === 'param-label')!.textContent).toBe(spec.label)
+      expect(field.getAttribute('aria-label')).toBe(spec.accessibleName)
+      expect(slider.getAttribute('aria-label')).toBe(`${spec.accessibleName}, slider`)
+      expect(Number(field.value)).toBe(spec.default)
+    })
   })
 })

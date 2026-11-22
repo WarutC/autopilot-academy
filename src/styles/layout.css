@@ -393,6 +393,11 @@ body {
   font: var(--type-control);
 }
 
+/* A contributed module's chip reads "Community" in bold; the other lines use the 600 face. */
+.lesson-chip-community .lesson-chip-tag {
+  font-weight: 700;
+}
+
 .lesson-chip[aria-pressed='true'] {
   background: var(--chip-on);
   color: var(--chip-on-ink);
