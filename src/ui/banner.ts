@@ -15,7 +15,8 @@ export interface BannerContent {
 /**
  * What the banner says for a phase and the player's result; undefined hides it.
  * `loadedCourse` is a course the player just loaded, announced while the flight is ready.
- * `wingman` is the wingman's name and result, reported after Mission complete.
+ * `wingman` is the wingman's name and result, reported after Mission complete or
+ * Crashed; the run ends only once both planes stop, so its score is final.
  */
 export function bannerContent(
   phase: Phase,
@@ -34,7 +35,11 @@ export function bannerContent(
   if (phase !== 'ended' || !result) return undefined
   const note = result.retuned ? { note: 'Retuned' } : {}
   if (result.status === 'crashed') {
-    return { title: 'Crashed', body: 'The aircraft left the safe altitude band. Retune and fly again.', ...note }
+    return {
+      title: 'Crashed',
+      body: `The aircraft left the safe altitude band. Retune and fly again.${wingmanText(wingman)}`,
+      ...note,
+    }
   }
   if (result.status === 'finished') {
     const passed = ringsPassed(result.results)
