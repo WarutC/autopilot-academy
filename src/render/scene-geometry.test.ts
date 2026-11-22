@@ -87,6 +87,13 @@ describe('sceneGeometry: ready', () => {
     expect(g.hud.altitude).toBe('Altitude 50 m, target 50 m')
     expect(g.score).toBe('0.0')
     expect(scoreLabel(ready())).toBe('0.0 points')
+    expect(g.badge).toEqual({ x: 1280 - 16 - 46, y: 720 - 16 - 46, r: 46 })
+  })
+
+  it('shrinks the badge on a small scene and hides it when there is no room', () => {
+    expect(sceneGeometry(ready(), { width: 100, height: 60, dpr: 1 }).badge).toEqual({ x: 100 - 16 - 14, y: 60 - 16 - 14, r: 14 })
+    expect(sceneGeometry(ready(), { width: 200, height: 32, dpr: 1 }).badge.r).toBe(0)
+    expect(sceneGeometry(ready(), { width: 200, height: 20, dpr: 1 }).badge.r).toBe(0)
   })
 
   it('has no trail before the first tick', () => {
@@ -211,6 +218,20 @@ describe('sceneGeometry: off-screen rings', () => {
       .map(({ i }) => i)
     expect(g.rings.map((r) => r.index)).toEqual(expected)
     expect(expected.length).toBeLessThan(course.rings.length)
+  })
+
+  it('keeps a ring whose rim still reaches into a tall scene', () => {
+    const tall: SceneSize = { width: 1600, height: 4000, dpr: 1 }
+    const g = sceneGeometry(snapshotWith(plane({ x: 900 })), tall)
+    const { camX, sx } = g.camera
+    const anyRing = g.rings[0] ?? sceneGeometry(snapshotWith(plane({ x: 150 })), tall).rings[0]!
+    const reach = anyRing.rx + (anyRing.width + LINE.rim) / 2
+    expect(reach).toBeGreaterThan(40)
+    const expected = course.rings
+      .map((r, i) => ({ i, x: (r.x - camX) * sx }))
+      .filter(({ x }) => x >= -reach && x <= tall.width + reach)
+      .map(({ i }) => i)
+    expect(g.rings.map((r) => r.index)).toEqual(expected)
   })
 
   it('marks rings near the plane for their front half', () => {

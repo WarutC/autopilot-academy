@@ -112,23 +112,33 @@ function watchPixelRatio(): void {
   )
 }
 
-async function start(): Promise<void> {
-  // Show the Ready banner now; the dev-only imports below may take a moment.
-  syncUi()
+/** Dev-server-only switches: `?fixture[=n]` shows a fixture snapshot, `?controller=dive` flies a full dive. */
+async function loadDevSwitches(): Promise<void> {
   const query = new URLSearchParams(location.search)
-  if (import.meta.env.DEV && query.has('fixture')) {
+  if (query.has('fixture')) {
     const { FIXTURE_ID, fixtureSnapshot } = await import('./render/fixture.ts')
     const flown = query.get('fixture')
     // A Fly click during the import wins over the fixture.
     if (flight.phase === 'ready') {
       fixture = fixtureSnapshot(flown ? Number(flown) : undefined)
       canvas.dataset.fixture = FIXTURE_ID
+      requestDraw()
     }
   }
-  if (import.meta.env.DEV && query.get('controller') === 'dive') {
+  if (query.get('controller') === 'dive') {
     const { DIVE } = await import('./ui/dive.ts')
     player = { algorithm: DIVE, params: {} }
+    // A flight started during the import flew the default; start it again with the dive.
+    if (flight.phase !== 'ready') {
+      flight.fly()
+      syncUi()
+      requestDraw()
+    }
   }
+}
+
+function start(): void {
+  syncUi()
   watchTheme(() => {
     theme = loadTheme()
     requestDraw()
@@ -147,6 +157,8 @@ async function start(): Promise<void> {
     document.fonts.load(`500 18px ${theme.fontBody}`),
   ]).then(requestDraw, () => {})
   requestAnimationFrame(frame)
+  // The loop already runs, so a failed dev import only loses its switch.
+  if (import.meta.env.DEV) loadDevSwitches().catch((error: unknown) => console.error(error))
 }
 
-void start()
+start()

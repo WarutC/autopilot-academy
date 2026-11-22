@@ -52,11 +52,17 @@ describe('LIGHT', () => {
 describe('LIGHT against tokens.css', () => {
   it('equals the light :root values', async () => {
     const css: string = (await import('../styles/tokens.css?raw')).default
-    const root = css.slice(css.indexOf(':root'), css.indexOf('@media'))
+    // The first :root block, up to its closing brace, holds the light tokens.
+    const start = css.indexOf(':root')
+    expect(start).toBeGreaterThanOrEqual(0)
+    const root = css.slice(start, css.indexOf('}', start))
+    const missing: string[] = []
     const fromCss = readTheme((name) => {
       const match = new RegExp(`${name}:\\s*([^;]+);`).exec(root)
+      if (!match) missing.push(name)
       return match ? match[1] : ''
     })
+    expect(missing).toEqual([])
     expect(fromCss).toEqual(LIGHT)
   })
 })

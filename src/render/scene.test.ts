@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { LIGHT } from '../ui/theme.ts'
 import { fixtureSnapshot } from './fixture.ts'
-import { draw } from './scene.ts'
+import { SCENE, draw } from './scene.ts'
 
-/** A 2D context stand-in that records every method call. */
+/** A 2D context stand-in that records every method call and every `strokeStyle` set. */
 function recordingContext(): { ctx: CanvasRenderingContext2D; calls: string[] } {
   const calls: string[] = []
   const gradient = { addColorStop: () => {} }
@@ -16,6 +16,7 @@ function recordingContext(): { ctx: CanvasRenderingContext2D; calls: string[] } 
       }
     },
     set(target, key, value) {
+      if (key === 'strokeStyle') calls.push(`strokeStyle=${String(value)}`)
       target[key] = value
       return true
     },
@@ -48,5 +49,20 @@ describe('draw', () => {
     expect(trace.t).toEqual(before.t)
     expect(trace.length).toBe(before.length)
     expect(s.planes[0].results).toEqual(before.results)
+  })
+
+  it('strokes passed rings green and missed rings red', () => {
+    const strokes = (flown?: number) => {
+      const { ctx, calls } = recordingContext()
+      draw(ctx, fixtureSnapshot(flown), LIGHT, { width: 1280, height: 720, dpr: 1 })
+      return calls
+    }
+    // The fixture shows the last ring flown: passed by default, missed after two rings.
+    const passed = strokes()
+    expect(passed).toContain(`strokeStyle=${SCENE.ringHit}`)
+    expect(passed).not.toContain(`strokeStyle=${SCENE.ringMiss}`)
+    const missed = strokes(2)
+    expect(missed).toContain(`strokeStyle=${SCENE.ringMiss}`)
+    expect(missed).not.toContain(`strokeStyle=${SCENE.ringHit}`)
   })
 })

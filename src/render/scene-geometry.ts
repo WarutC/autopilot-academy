@@ -153,10 +153,12 @@ export function sceneGeometry(snapshot: Snapshot, size: SceneSize): SceneGeometr
   const ry = PLANT.ringR * ky
   const rx = ry * 0.32
   const ringWidth = Math.max(LINE.ringMin, ry * 0.2)
+  // Cull a ring only once it is fully off screen, however tall the scene.
+  const cull = Math.max(40, rx + (ringWidth + LINE.rim) / 2)
   const rings: RingShape[] = []
   snapshot.rings.forEach((ring, index) => {
     const x = X(ring.x)
-    if (x < -40 || x > W + 40) return
+    if (x < -cull || x > W + cull) return
     const result = results.find((r) => r.ring === index)
     const state: RingState = !result ? 'pending' : result.pass ? 'pass' : 'miss'
     rings.push({ index, x, y: Y(ring.h), rx, ry, width: ringWidth, state, front: Math.abs(x - planeX) <= length })
