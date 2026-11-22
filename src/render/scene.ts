@@ -3,7 +3,7 @@
 
 import type { Snapshot } from '../sim/types.ts'
 import type { Theme } from '../ui/theme.ts'
-import { FONT, INSET, LINE, TARGET_DASH, sceneGeometry, type RingShape, type RingState, type SceneSize } from './scene-geometry.ts'
+import { FONT, INSET, LINE, TARGET_DASH, sceneGeometry, type PlaneShape, type Point, type RingShape, type RingState, type SceneSize } from './scene-geometry.ts'
 
 /** Scene colors, the same in both themes because the scene is a picture. */
 export const SCENE = {
@@ -46,8 +46,14 @@ function drawRing(ctx: CanvasRenderingContext2D, ring: RingShape, half: boolean)
   ctx.stroke()
 }
 
-/** A plain plane, nose to +x, drawn in a 100-unit box scaled to `length`. */
-function drawPlane(ctx: CanvasRenderingContext2D, x: number, y: number, angle: number, length: number): void {
+/** A plain plane, nose to +x, drawn in a 100-unit box scaled to `length`, with `fill` for the body and `shade` for the wing. */
+function drawPlane(
+  ctx: CanvasRenderingContext2D,
+  plane: PlaneShape,
+  fill: string,
+  shade: string,
+): void {
+  const { x, y, angle, length } = plane
   const s = length / 100
   ctx.save()
   ctx.translate(x, y)
@@ -58,7 +64,7 @@ function drawPlane(ctx: CanvasRenderingContext2D, x: number, y: number, angle: n
   ctx.strokeStyle = SCENE.outline
 
   // Tail fin.
-  ctx.fillStyle = SCENE.planeRed
+  ctx.fillStyle = fill
   ctx.beginPath()
   ctx.moveTo(-32, -4)
   ctx.lineTo(-50, -25)
@@ -81,13 +87,22 @@ function drawPlane(ctx: CanvasRenderingContext2D, x: number, y: number, angle: n
   ctx.stroke()
 
   // Wing.
-  ctx.fillStyle = SCENE.planeRedShade
+  ctx.fillStyle = shade
   ctx.beginPath()
   ctx.roundRect(-10, -2, 34, 8, 3)
   ctx.fill()
   ctx.stroke()
 
   ctx.restore()
+}
+
+function drawTrail(ctx: CanvasRenderingContext2D, trail: readonly Point[], color: string): void {
+  if (trail.length < 2) return
+  ctx.lineWidth = LINE.trail
+  ctx.strokeStyle = color
+  ctx.beginPath()
+  trail.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)))
+  ctx.stroke()
 }
 
 function drawHud(ctx: CanvasRenderingContext2D, lines: readonly string[], theme: Theme): void {
@@ -144,19 +159,16 @@ export function draw(ctx: CanvasRenderingContext2D, snapshot: Snapshot, theme: T
 
   for (const ring of g.rings) drawRing(ctx, ring, false)
 
-  if (g.trail.length >= 2) {
-    ctx.lineWidth = LINE.trail
-    ctx.strokeStyle = theme.accent
-    ctx.beginPath()
-    g.trail.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)))
-    ctx.stroke()
-  }
+  // The wingman's trail and plane go first, so the player's draw over them.
+  if (g.wingman) drawTrail(ctx, g.wingman.trail, theme.ghost)
+  drawTrail(ctx, g.trail, theme.accent)
 
-  drawPlane(ctx, g.plane.x, g.plane.y, g.plane.angle, g.plane.length)
+  if (g.wingman) drawPlane(ctx, g.wingman.plane, theme.ghost, theme.ghost)
+  drawPlane(ctx, g.plane, SCENE.planeRed, SCENE.planeRedShade)
 
   for (const ring of g.rings) if (ring.front) drawRing(ctx, ring, true)
 
-  drawHud(ctx, [g.hud.ring, g.hud.altitude], theme)
+  drawHud(ctx, g.hud.wingman === undefined ? [g.hud.ring, g.hud.altitude] : [g.hud.ring, g.hud.altitude, g.hud.wingman], theme)
 
   const { badge } = g
   if (badge.r > 0) {

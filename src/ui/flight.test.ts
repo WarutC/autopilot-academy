@@ -329,4 +329,25 @@ describe('playerRuns', () => {
     const run = playerRuns(() => ({ course: 101, mode: 'autopilot', player: pPlayer, setpoint: 50, stick: 0, conditions }))()
     expect(run.snapshot().conditions).toEqual(conditions)
   })
+
+  it('flies the wingman with its own params, the same as a direct run', () => {
+    const conditions = { ...CALM, gusts: 4 }
+    const wingman: RunPlayer = { algorithm: pAlgorithm, params: { ...defaultParams(pAlgorithm), Kp: 0.5 } }
+    const run = playerRuns(() => ({ course: 101, mode: 'semi-auto', player: pPlayer, setpoint: 50, stick: 0, conditions, wingman }))()
+    const direct = createRun({ course: 101, mode: 'semi-auto', player: pPlayer, conditions, wingman })
+    direct.setSetpoint(50)
+    run.step(400)
+    direct.step(400)
+    expect(run.result('wingman')?.lesson).toBe('p')
+    const a = run.snapshot().trace.wingman!
+    const b = direct.snapshot().trace.wingman!
+    expect(a.length).toBe(b.length)
+    expect(Array.from(a.h).slice(0, a.length)).toEqual(Array.from(b.h).slice(0, b.length))
+  })
+
+  it('flies no wingman when none is given', () => {
+    const run = playerRuns(() => ({ course: 101, mode: 'autopilot', player: pPlayer, setpoint: 50, stick: 0, conditions: CALM }))()
+    expect(run.result('wingman')).toBeUndefined()
+    expect(run.snapshot().planes).toHaveLength(1)
+  })
 })

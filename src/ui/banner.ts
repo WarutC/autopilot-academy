@@ -15,11 +15,13 @@ export interface BannerContent {
 /**
  * What the banner says for a phase and the player's result; undefined hides it.
  * `loadedCourse` is a course the player just loaded, announced while the flight is ready.
+ * `wingman` is the wingman's name and result, reported after Mission complete.
  */
 export function bannerContent(
   phase: Phase,
   result: PlaneResult | undefined,
   loadedCourse?: number,
+  wingman?: { readonly name: string; readonly result: PlaneResult },
 ): BannerContent | undefined {
   if (phase === 'ready' && loadedCourse !== undefined) {
     return {
@@ -38,11 +40,20 @@ export function bannerContent(
     const passed = ringsPassed(result.results)
     return {
       title: 'Mission complete',
-      body: `${result.points.toFixed(1)} points, ${passed} of ${result.ringsTotal} rings.`,
+      body: `${result.points.toFixed(1)} points, ${passed} of ${result.ringsTotal} rings.${wingmanText(wingman)}`,
       ...note,
     }
   }
   return undefined
+}
+
+/** The wingman's score after the player's, with a leading space; empty without a wingman. */
+function wingmanText(wingman: { readonly name: string; readonly result: PlaneResult } | undefined): string {
+  if (!wingman) return ''
+  const points = wingman.result.points.toFixed(1)
+  return wingman.result.status === 'crashed'
+    ? ` Wingman ${wingman.name} crashed with ${points} points.`
+    : ` Wingman ${wingman.name}: ${points} points.`
 }
 
 export interface Banner {

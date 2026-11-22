@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { algorithms, defaultParams } from '../algorithms/index.ts'
 import manual from '../algorithms/manual.ts'
+import p from '../algorithms/p.ts'
 import pid from '../algorithms/pid.ts'
 import { defaultConditions } from './conditions.ts'
 import {
@@ -41,6 +42,7 @@ describe('defaultSettings', () => {
       params: { manual: {}, pid: pidDefaults },
       course: 101,
       conditions: defaultConditions(),
+      wingman: null,
     })
   })
 
@@ -159,6 +161,7 @@ describe('loadSettings and saveSettings', () => {
     params: { manual: {}, pid: { ...pidDefaults, Kp: 0.5 } },
     course: 202,
     conditions: { ...defaultConditions(), down: 2.5, gusts: 4 },
+    wingman: 'pid',
   }
 
   it('round-trips through storage', () => {
@@ -205,5 +208,27 @@ describe('stored conditions', () => {
     const s = parseSettings(stored({ version: 1, course: 202, conditions: { gusts: 4 } }), modules)
     expect(s.course).toBe(202)
     expect(s.conditions).toEqual({ ...defaultConditions(), gusts: 4 })
+  })
+})
+
+describe('wingman setting', () => {
+  const withP = [manual, p, pid]
+
+  it('keeps a stored wingman that is a registered lesson offering Autopilot', () => {
+    expect(parseSettings(stored({ version: 1, wingman: 'p' }), withP).wingman).toBe('p')
+  })
+
+  it('loads null for an unregistered, Manual-only or non-string wingman', () => {
+    for (const wingman of ['nope', 'manual', 42, true, {}]) {
+      expect(parseSettings(stored({ version: 1, wingman }), withP).wingman).toBeNull()
+    }
+    expect(parseSettings(stored({ version: 1 }), withP).wingman).toBeNull()
+  })
+
+  it('writes the wingman into the saved JSON', () => {
+    const fake = fakeStorage()
+    saveSettings(fake.get, { ...defaultSettings(withP), wingman: 'p' })
+    expect(JSON.parse(fake.items.get(STORAGE_KEY)!)).toMatchObject({ version: 1, wingman: 'p' })
+    expect(loadSettings(fake.get, withP).wingman).toBe('p')
   })
 })

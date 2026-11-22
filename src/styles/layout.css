@@ -159,6 +159,29 @@ body {
   opacity: 0.45;
 }
 
+/* The Wingman card: one full-width select and a note under it. */
+.wingman-select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 12px;
+  background: var(--field);
+  color: var(--ink);
+  border: 2px solid var(--strong);
+  border-radius: 8px;
+  font: var(--type-label);
+}
+
+.wingman-select:disabled {
+  opacity: 0.45;
+}
+
+.wingman-note {
+  margin: 12px 0 0;
+  font: var(--type-body);
+  color: var(--muted);
+}
+
 /* The scene and the banner over it. */
 .stage {
   position: relative;
@@ -508,6 +531,7 @@ body {
 .param-number:focus-visible,
 .param-slider:focus-visible,
 .param-check:focus-visible,
+.wingman-select:focus-visible,
 .lesson-chip:focus-visible,
 .stick-btn:focus-visible,
 .scene:focus-visible,

@@ -6,6 +6,7 @@ import { draw as drawScene } from './render/scene.ts'
 import { draw as drawSplane } from './render/splane.ts'
 import { PLANT, SETPOINT_MAX, SETPOINT_MIN } from './sim/plant.ts'
 import type { Run, RunPlayer } from './sim/run.ts'
+import type { PlaneResult } from './sim/scoring.ts'
 import type { Conditions, FlightMode, Snapshot } from './sim/types.ts'
 import { watchAutoPause } from './ui/auto-pause.ts'
 import { createAutopilotCard } from './ui/autopilot-card.ts'
@@ -25,6 +26,7 @@ import { createStore } from './ui/store.ts'
 import { loadTheme, watchTheme } from './ui/theme.ts'
 import { createToolbar } from './ui/toolbar.ts'
 import { createTuningHandlers } from './ui/tuning.ts'
+import { createWingmanCard, wingmanPlayer } from './ui/wingman-card.ts'
 
 const canvas = document.createElement('canvas')
 canvas.className = 'scene'
@@ -105,6 +107,7 @@ const flight = createFlight(
     setpoint,
     stick: stick.value,
     conditions: store.conditions,
+    wingman: wingmanPlayer(algorithms, store.wingman, (id) => store.params(id)),
   })),
   store,
 )
@@ -176,6 +179,20 @@ const conditionsCard = createConditionsCard(document, store.conditions, {
   },
 })
 side.append(conditionsCard.element)
+
+/** The second autopilot flown beside the player; locked while a run flies. */
+const wingmanCard = createWingmanCard(document, algorithms, store.wingman, {
+  change(id) {
+    store.setWingman(id)
+    if (inFlight(flight.phase)) return
+    // Outside a flight the run is the next flight's preview, so show the new wingman in it, not a dev fixture.
+    clearFixture()
+    flight.reset()
+    syncUi()
+    requestDraw()
+  },
+})
+side.append(wingmanCard.element)
 
 /** Switches to another lesson outside a flight, from a chip or the address. */
 function selectLesson(id: string): void {
@@ -288,13 +305,21 @@ let bannerCourse: number | undefined
 function syncUi(): void {
   toolbar.update(flight.phase, flight.speed, store.course)
   autopilotCard.setPhase(flight.phase)
+  wingmanCard.setPhase(flight.phase)
   // The banner depends only on the phase, the run's result and a loaded course, so recompute it when one changes.
   if (flight.phase !== bannerPhase || flight.run !== bannerRun || loadedCourse !== bannerCourse) {
     bannerPhase = flight.phase
     bannerRun = flight.run
     bannerCourse = loadedCourse
-    banner.update(bannerContent(flight.phase, flight.run.result('player'), loadedCourse))
+    banner.update(bannerContent(flight.phase, flight.run.result('player'), loadedCourse, wingmanResult(flight.run)))
   }
+}
+
+/** The wingman's name and result in `run`, or undefined when it flies none. */
+function wingmanResult(run: Run): { name: string; result: PlaneResult } | undefined {
+  const result = run.result('wingman')
+  if (!result) return undefined
+  return { name: findAlgorithm(result.lesson)?.name ?? result.lesson, result }
 }
 
 /** Sizes `el`'s backing store to its CSS size at the device pixel ratio; returns the size. */

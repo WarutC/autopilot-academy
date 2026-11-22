@@ -7,7 +7,7 @@ import { CALM, createRun } from '../sim/run.ts'
 import type { TraceBuffer } from '../sim/trace.ts'
 import type { PlaneSnapshot, RingResult, Snapshot, Trace } from '../sim/types.ts'
 import { fixtureSnapshot } from './fixture.ts'
-import { FONT, LINE, altitudeY, sceneGeometry, scoreLabel, type SceneSize } from './scene-geometry.ts'
+import { FONT, LINE, PLANE_AT, altitudeY, sceneGeometry, scoreLabel, type SceneSize } from './scene-geometry.ts'
 
 const SIZE: SceneSize = { width: 1280, height: 720, dpr: 1 }
 const course = makeCourse(101)
@@ -323,5 +323,79 @@ describe('fixtureSnapshot', () => {
     expect(fixtureSnapshot(0).planes[0].results).toHaveLength(1)
     expect(fixtureSnapshot(99).planes[0].results).toHaveLength(9)
     expect(fixtureSnapshot(Number.NaN).planes[0].results).toHaveLength(4)
+  })
+})
+
+describe('sceneGeometry: wingman', () => {
+  const both = (player: PlaneSnapshot, wingman: PlaneSnapshot, traces: Partial<Record<'player' | 'wingman', Trace>> = {}): Snapshot => ({
+    ...snapshotWith(player),
+    planes: [player, wingman],
+    trace: traces,
+  })
+  const wing = (over: Partial<PlaneSnapshot>) => plane({ id: 'wingman', ...over })
+  /** Course distance at the camera's plane position. */
+  const centerOf = (g: ReturnType<typeof sceneGeometry>) => g.camera.camX + (PLANE_AT * SIZE.width) / g.camera.sx
+
+  it('draws the wingman plane, its trail and its HUD score', () => {
+    const rows: Array<readonly [number, number]> = [
+      [13, 50],
+      [14, 52],
+      [15, 55],
+    ]
+    const s = both(plane({ x: 300, h: 50 }), wing({ x: 300, h: 60, points: 12.34 }), {
+      player: traceOf(rows),
+      wingman: traceOf(rows.map(([t, h]) => [t, h + 5] as const)),
+    })
+    const g = sceneGeometry(s, SIZE)
+    expect(g.wingman).toBeDefined()
+    expect(g.wingman!.plane.x).toBeCloseTo(g.plane.x, 9)
+    expect(g.wingman!.plane.y).toBeCloseTo(altitudeY(720, 60), 9)
+    expect(g.wingman!.plane.length).toBe(g.plane.length)
+    expect(g.wingman!.trail).toHaveLength(4)
+    expect(g.wingman!.trail[0]!.y).toBeCloseTo(altitudeY(720, 55), 9)
+    expect(g.wingman!.trail.at(-1)).toEqual({ x: g.wingman!.plane.x, y: g.wingman!.plane.y })
+    expect(g.hud.wingman).toBe('Wingman 12.3')
+  })
+
+  it('has no wingman and two HUD lines with one plane', () => {
+    const g = sceneGeometry(snapshotWith(plane({ x: 300 })), SIZE)
+    expect(g.wingman).toBeUndefined()
+    expect(g.hud.wingman).toBeUndefined()
+    expect(Object.keys(g.hud)).toEqual(['ring', 'altitude'])
+    expect('wingman' in g).toBe(false)
+  })
+
+  it('leaves every player shape, the HUD and the badge as without a wingman while the player flies', () => {
+    const player = plane({ x: 300, h: 55, v: 2, points: 20, results: [result(0, true)] })
+    const alone = sceneGeometry(snapshotWith(player), SIZE)
+    const { wingman, hud, ...withWingman } = sceneGeometry(both(player, wing({ x: 300, h: 30, points: 3 })), SIZE)
+    expect(wingman).toBeDefined()
+    const { hud: aloneHud, ...aloneRest } = alone
+    expect(withWingman).toEqual(aloneRest)
+    expect({ ring: hud.ring, altitude: hud.altitude }).toEqual(aloneHud)
+  })
+
+  it('follows the player while it flies, else the flying wingman, else the plane further along', () => {
+    const at = (p: Partial<PlaneSnapshot>, w: Partial<PlaneSnapshot>) => centerOf(sceneGeometry(both(plane(p), wing(w)), SIZE))
+    expect(at({ x: 400, status: 'flying' }, { x: 200, status: 'crashed' })).toBeCloseTo(400, 9)
+    expect(at({ x: 200, status: 'flying' }, { x: 400, status: 'flying' })).toBeCloseTo(200, 9)
+    expect(at({ x: 300, status: 'finished' }, { x: 250, status: 'flying' })).toBeCloseTo(250, 9)
+    expect(at({ x: 200, status: 'crashed' }, { x: 500, status: 'finished' })).toBeCloseTo(500, 9)
+    expect(at({ x: 500, status: 'finished' }, { x: 200, status: 'crashed' })).toBeCloseTo(500, 9)
+    expect(at({ x: 300, status: 'finished' }, { x: 300, status: 'finished' })).toBeCloseTo(300, 9)
+  })
+
+  it('marks a ring near the wingman for its front half', () => {
+    const x = course.rings[1].x
+    const g = sceneGeometry(both(plane({ x: x - 10, status: 'crashed' }), wing({ x, status: 'flying' })), SIZE)
+    expect(g.rings.find((r) => r.index === 1)!.front).toBe(true)
+  })
+
+  it('keeps the rings, the ring count and the altitude line the player\'s', () => {
+    const s = both(plane({ x: 300, h: 50, results: [result(0, true)] }), wing({ x: 300, h: 70, results: [result(0, false), result(1, false)] }))
+    const g = sceneGeometry(s, SIZE)
+    expect(g.hud.ring).toBe('Ring 2 / 10')
+    expect(g.hud.altitude).toBe('Altitude 50 m, target 50 m')
+    expect(g.rings.find((r) => r.index === 0)?.state ?? 'pass').toBe('pass')
   })
 })

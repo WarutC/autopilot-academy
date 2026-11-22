@@ -102,6 +102,8 @@ export interface PlayerInputs {
   readonly setpoint: number
   readonly stick: StickInput
   readonly conditions: Conditions
+  /** A second autopilot flown beside the player, or none. */
+  readonly wingman?: RunPlayer
 }
 
 /**
@@ -111,8 +113,8 @@ export interface PlayerInputs {
  */
 export function playerRuns(inputs: () => PlayerInputs): () => Run {
   return () => {
-    const { course, mode, player, setpoint, stick, conditions } = inputs()
-    const run = createRun({ course, mode, player, conditions })
+    const { course, mode, player, setpoint, stick, conditions, wingman } = inputs()
+    const run = createRun({ course, mode, player, conditions, wingman })
     run.setSetpoint(setpoint)
     run.setInput(stick)
     return run

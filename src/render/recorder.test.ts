@@ -107,4 +107,24 @@ describe('recorder draw', () => {
     expect(calls).not.toContain('text=Elevator')
     expect(calls).not.toContain(`fillStyle=${SCENE.ringHit}`)
   })
+
+  it('strokes the wingman line in the ghost color under the altitude line, with a Wingman legend entry', () => {
+    const base = fixtureSnapshot()
+    const player = base.planes[0]!
+    const s = { ...base, planes: [player, { ...player, id: 'wingman' as const }], trace: { player: base.trace.player!, wingman: base.trace.player! } }
+    const { ctx, calls } = recordingContext()
+    draw(ctx, s, LIGHT, { width: 1000, height: 240, dpr: 1 })
+    const ghost = calls.indexOf(`strokeStyle=${LIGHT.ghost}`)
+    expect(ghost).toBeGreaterThan(-1)
+    expect(ghost).toBeLessThan(calls.indexOf(`strokeStyle=${LIGHT.accent}`))
+    expect(calls[ghost - 1]).toBe(`lineWidth=${RECORDER_LINE.altitude}`)
+    expect(calls).toContain('text=Wingman')
+  })
+
+  it('has no ghost line or Wingman entry without a wingman', () => {
+    const { ctx, calls } = recordingContext()
+    draw(ctx, fixtureSnapshot(), LIGHT, { width: 1000, height: 240, dpr: 1 })
+    expect(calls).not.toContain(`strokeStyle=${LIGHT.ghost}`)
+    expect(calls).not.toContain('text=Wingman')
+  })
 })

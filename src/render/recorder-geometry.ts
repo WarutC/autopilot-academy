@@ -84,7 +84,7 @@ export interface RingBar {
   readonly state: RingState
 }
 
-export type LegendKey = 'target' | 'altitude' | 'elevator'
+export type LegendKey = 'target' | 'altitude' | 'wingman' | 'elevator'
 
 export interface LegendEntry {
   readonly key: LegendKey
@@ -109,6 +109,8 @@ export interface RecorderGeometry {
   readonly tEnd: number
   readonly target: readonly Point[]
   readonly altitude: readonly Point[]
+  /** The wingman's altitude flown; empty without a wingman. */
+  readonly wingman: readonly Point[]
   readonly elevator: readonly Point[]
   readonly ringBars: readonly RingBar[]
   readonly markers: readonly MarkerShape[]
@@ -120,6 +122,7 @@ export interface RecorderGeometry {
 const LEGEND_LABEL: Record<LegendKey, string> = {
   target: 'Target',
   altitude: 'Altitude',
+  wingman: 'Wingman',
   elevator: 'Elevator',
 }
 
@@ -183,13 +186,22 @@ export function recorderGeometry(
   // or from a trace of 2 rows or more.
   const hasTarget = course.endX > 0 || n >= 2
   const hasTrace = n >= 2
+  const wingmanTrace = snapshot.trace.wingman
+  const hasWingman = snapshot.planes.some((p) => p.id === 'wingman')
+  const hasWingmanTrace = (wingmanTrace?.length ?? 0) >= 2
   const keys: LegendKey[] = []
   if (hasTarget) keys.push('target')
-  if (hasTrace) keys.push('altitude', 'elevator')
+  if (hasTrace) keys.push('altitude')
+  if (hasWingmanTrace) keys.push('wingman')
+  if (hasTrace) keys.push('elevator')
   const { entries: legend } = layoutLegend(keys, W, measure)
   // Reserve the rows the full legend needs, so the plot does not move when
-  // the altitude and elevator entries appear.
-  const { rows } = layoutLegend(['target', 'altitude', 'elevator'], W, measure)
+  // the altitude, wingman and elevator entries appear.
+  const { rows } = layoutLegend(
+    hasWingman ? ['target', 'altitude', 'wingman', 'elevator'] : ['target', 'altitude', 'elevator'],
+    W,
+    measure,
+  )
 
   // Top to bottom: legend rows, altitude plot, gap, elevator band.
   const legendBottom = PAD.top + rows * LEGEND_ROW
@@ -222,6 +234,10 @@ export function recorderGeometry(
       elevator.push({ x, y: U(trace.u[i]) })
     }
     tFlown = trace.t[n - 1]
+  }
+  const wingman: Point[] = []
+  if (wingmanTrace && hasWingmanTrace) {
+    for (let i = 0; i < wingmanTrace.length; i++) wingman.push({ x: X(wingmanTrace.t[i]), y: Y(wingmanTrace.h[i]) })
   }
   // The rest of the reference: from the rings, or flat at the player's
   // setpoint in Semi-auto.
@@ -276,5 +292,5 @@ export function recorderGeometry(
 
   const ticks = [20, 50, 80, 110].map((h) => ({ h, y: Y(h) }))
 
-  return { width: W, height: H, plot, band, tEnd, target, altitude, elevator, ringBars, markers, legend, ticks }
+  return { width: W, height: H, plot, band, tEnd, target, altitude, wingman, elevator, ringBars, markers, legend, ticks }
 }

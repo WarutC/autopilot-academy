@@ -323,3 +323,54 @@ describe('recorderGeometry: ring bars', () => {
     expect(bar.bottom).toBeCloseTo(plotY(g, PLANT.hCeil - PLANT.ringR), 9)
   })
 })
+
+describe('recorderGeometry: wingman', () => {
+  const s = fixtureSnapshot()
+  const player = s.planes[0]!
+  /** The fixture with a wingman plane whose trace is the player's, 5 m higher, cut to `rows`. */
+  function withWingman(rows: number): Snapshot {
+    const tr = s.trace.player!
+    const w = createTrace(Math.max(1, rows))
+    w.length = rows
+    for (let i = 0; i < rows; i++) {
+      w.t[i] = tr.t[i]
+      w.h[i] = tr.h[i] + 5
+    }
+    return { ...s, planes: [player, { ...player, id: 'wingman' }], trace: { player: tr, wingman: w } }
+  }
+
+  it('draws the wingman altitude from its trace and lists it after Altitude', () => {
+    const g = recorderGeometry(withWingman(s.trace.player!.length), SIZE)
+    expect(g.wingman).toHaveLength(s.trace.player!.length)
+    for (let i = 0; i < g.wingman.length; i++) {
+      expect(g.wingman[i]!.x).toBe(g.altitude[i]!.x)
+      expect(g.wingman[i]!.y).toBeCloseTo(plotY(g, s.trace.player!.h[i]! + 5), 9)
+    }
+    expect(g.legend.map((e) => e.label)).toEqual(['Target', 'Altitude', 'Wingman', 'Elevator'])
+    expect(g.legend.find((e) => e.key === 'wingman')!.dashed).toBe(false)
+  })
+
+  it('draws no line and no entry for a wingman trace under 2 rows, but keeps the plot in place', () => {
+    const one = recorderGeometry(withWingman(1), { width: 400, height: 300, dpr: 1 })
+    const full = recorderGeometry(withWingman(s.trace.player!.length), { width: 400, height: 300, dpr: 1 })
+    expect(one.wingman).toEqual([])
+    expect(one.legend.map((e) => e.key)).not.toContain('wingman')
+    expect(one.plot).toEqual(full.plot)
+    expect(one.band).toEqual(full.band)
+  })
+
+  it('has no wingman line or entry, and the same geometry, without a wingman', () => {
+    const g = recorderGeometry(s, SIZE)
+    expect(g.wingman).toEqual([])
+    expect(g.legend.map((e) => e.key)).toEqual(['target', 'altitude', 'elevator'])
+    // Wide enough for the three-entry legend on one row, too narrow for four.
+    const narrow = { width: 450, height: 300, dpr: 1 }
+    const { wingman: _w, legend, ...rest } = recorderGeometry(s, narrow)
+    const other = recorderGeometry(withWingman(s.trace.player!.length), narrow)
+    // Without a wingman the reserve is exactly the three-entry legend's rows; a wingman reserves more here.
+    expect(legend.map((e) => e.key)).toEqual(['target', 'altitude', 'elevator'])
+    const rows = Math.max(...legend.map((e) => Math.round((e.y - PAD.top - LEGEND_ROW / 2) / LEGEND_ROW))) + 1
+    expect(rest.plot.top).toBe(PAD.top + rows * LEGEND_ROW)
+    expect(other.plot.top).toBeGreaterThan(rest.plot.top)
+  })
+})

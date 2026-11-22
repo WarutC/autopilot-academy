@@ -26,7 +26,7 @@ function recordingContext(): { ctx: CanvasRenderingContext2D; calls: string[]; w
       }
     },
     set(target, key, value) {
-      if (key === 'strokeStyle' || key === 'font' || key === 'lineWidth') calls.push(`${String(key)}=${String(value)}`)
+      if (key === 'strokeStyle' || key === 'fillStyle' || key === 'font' || key === 'lineWidth') calls.push(`${String(key)}=${String(value)}`)
       if (key === 'lineWidth') widths.push(Number(value) * scale)
       target[key] = value
       return true
@@ -90,5 +90,37 @@ describe('draw', () => {
     // Widths are as drawn on screen, so the plane's scaled outline counts at its real width.
     expect(widths.length).toBeGreaterThan(0)
     for (const w of widths) expect(w).toBeGreaterThanOrEqual(3 - 1e-9)
+  })
+
+  it('draws the wingman plane and trail in the ghost color before the player, and a third HUD line', () => {
+    const base = fixtureSnapshot()
+    const player = base.planes[0]!
+    const s = { ...base, planes: [player, { ...player, id: 'wingman' as const, h: player.h + 6, points: 7.25 }], trace: { player: base.trace.player!, wingman: base.trace.player! } }
+    const { ctx, calls } = recordingContext()
+    draw(ctx, s, LIGHT, { width: 1280, height: 720, dpr: 1 })
+    const ghost = calls.indexOf(`strokeStyle=${LIGHT.ghost}`)
+    const accent = calls.indexOf(`strokeStyle=${LIGHT.accent}`)
+    expect(ghost).toBeGreaterThan(-1)
+    expect(ghost).toBeLessThan(accent)
+    // The wingman plane is filled before the player's.
+    const ghostFill = calls.indexOf(`fillStyle=${LIGHT.ghost}`)
+    expect(ghostFill).toBeGreaterThan(-1)
+    expect(ghostFill).toBeLessThan(calls.indexOf(`fillStyle=${SCENE.planeRed}`))
+    // Two planes: one roundRect (the wing) per plane.
+    expect(calls.filter((c) => c === 'roundRect')).toHaveLength(2)
+    expect(calls.filter((c) => c === 'fillText').length).toBe(
+      (() => {
+        const alone = recordingContext()
+        draw(alone.ctx, base, LIGHT, { width: 1280, height: 720, dpr: 1 })
+        return alone.calls.filter((c) => c === 'fillText').length + 1
+      })(),
+    )
+  })
+
+  it('draws one plane and no ghost color without a wingman', () => {
+    const { ctx, calls } = recordingContext()
+    draw(ctx, fixtureSnapshot(), LIGHT, { width: 1280, height: 720, dpr: 1 })
+    expect(calls).not.toContain(`strokeStyle=${LIGHT.ghost}`)
+    expect(calls.filter((c) => c === 'roundRect')).toHaveLength(1)
   })
 })

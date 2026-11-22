@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { defaultParams } from '../algorithms/index.ts'
 import manual from '../algorithms/manual.ts'
+import p from '../algorithms/p.ts'
 import pid from '../algorithms/pid.ts'
 import { defaultConditions } from './conditions.ts'
 import { STORAGE_KEY, type StorageGetter } from './persistence.ts'
@@ -185,5 +186,41 @@ describe('Store conditions', () => {
     })
     store.setCondition('down', 3)
     expect(store.conditions.down).toBe(3)
+  })
+})
+
+describe('store wingman', () => {
+  const withP = [manual, p, pid]
+
+  it('starts with no wingman', () => {
+    expect(createStore(withP, fakeStorage().get).wingman).toBeNull()
+  })
+
+  it('remembers the wingman across a reload', () => {
+    const fake = fakeStorage()
+    createStore(withP, fake.get).setWingman('p')
+    expect(JSON.parse(fake.items.get(STORAGE_KEY)!).wingman).toBe('p')
+    expect(createStore(withP, fake.get).wingman).toBe('p')
+  })
+
+  it('ignores an id that is unregistered or lacks Autopilot, and skips an unchanged value', () => {
+    const fake = fakeStorage()
+    const store = createStore(withP, fake.get)
+    store.setWingman('nope')
+    store.setWingman('manual')
+    store.setWingman(null)
+    expect(store.wingman).toBeNull()
+    expect(fake.items.has(STORAGE_KEY)).toBe(false)
+    store.setWingman('pid')
+    store.setWingman(null)
+    expect(store.wingman).toBeNull()
+  })
+
+  it('keeps the wingman in memory when storage is blocked', () => {
+    const store = createStore(withP, (): never => {
+      throw new Error('blocked')
+    })
+    store.setWingman('p')
+    expect(store.wingman).toBe('p')
   })
 })

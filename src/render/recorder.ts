@@ -1,5 +1,5 @@
 // Paints the flight recorder: a legend, the target (dashed), the altitude
-// flown, ring bars colored by result, the elevator command in a lower band,
+// flown (and the wingman's, under it), ring bars colored by result, the elevator command in a lower band,
 // and a labeled vertical marker for every parameter change. Geometry comes
 // from `recorderGeometry`; this only strokes and fills what it returns.
 
@@ -87,6 +87,13 @@ export function draw(ctx: CanvasRenderingContext2D, snapshot: Snapshot, theme: T
     ctx.restore()
   }
 
+  // The wingman's line goes under the player's altitude line.
+  if (g.wingman.length >= 2) {
+    ctx.lineWidth = RECORDER_LINE.altitude
+    ctx.strokeStyle = theme.ghost
+    polyline(ctx, g.wingman)
+  }
+
   if (g.altitude.length >= 2) {
     ctx.lineWidth = RECORDER_LINE.altitude
     ctx.strokeStyle = theme.accent
@@ -121,6 +128,7 @@ export function draw(ctx: CanvasRenderingContext2D, snapshot: Snapshot, theme: T
   const swatchColor: Record<LegendKey, string> = {
     target: theme.refline,
     altitude: theme.accent,
+    wingman: theme.ghost,
     elevator: theme.muted,
   }
   ctx.font = `500 ${RECORDER_FONT.legend}px ${theme.fontBody}`

@@ -25,6 +25,8 @@ export interface Settings {
   readonly course: number
   /** The flight conditions, complete. */
   readonly conditions: Conditions
+  /** The lesson flown as the wingman, always one offering Autopilot; null for none. */
+  readonly wingman: string | null
 }
 
 /** Returns the storage, or undefined; obtaining it can itself throw when site data is blocked. */
@@ -42,6 +44,11 @@ export function firstLesson(modules: readonly AlgorithmModule[]): string {
   return modules.some((m) => m.id === DEFAULT_LESSON) ? DEFAULT_LESSON : (modules[0]?.id ?? DEFAULT_LESSON)
 }
 
+/** True when `id` is a registered lesson whose modes include Autopilot, so it can fly as the wingman. */
+export function validWingman(id: unknown, modules: readonly AlgorithmModule[]): id is string {
+  return typeof id === 'string' && modules.some((m) => m.id === id && m.modes.includes('autopilot'))
+}
+
 /** A course number is an integer from 1 to MAX_COURSE. */
 export function validCourse(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= MAX_COURSE
@@ -54,6 +61,7 @@ export function defaultSettings(modules: readonly AlgorithmModule[]): Settings {
     params: Object.fromEntries(modules.map((m) => [m.id, defaultParams(m)])),
     course: DEFAULT_COURSE,
     conditions: defaultConditions(),
+    wingman: null,
   }
 }
 
@@ -100,7 +108,9 @@ export function parseSettings(text: string | null, modules: readonly AlgorithmMo
 
   const conditions = mergeConditions(data.conditions)
 
-  return { lesson, modes, params, course, conditions }
+  const wingman = validWingman(data.wingman, modules) ? data.wingman : null
+
+  return { lesson, modes, params, course, conditions, wingman }
 }
 
 /** The stored settings, or defaults when storage is missing, blocked or holds something unusable. */
@@ -128,6 +138,7 @@ export function saveSettings(getStorage: StorageGetter, settings: Settings): boo
         params: settings.params,
         course: settings.course,
         conditions: settings.conditions,
+        wingman: settings.wingman,
       }),
     )
     return true

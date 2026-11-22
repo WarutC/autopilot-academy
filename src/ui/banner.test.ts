@@ -107,6 +107,31 @@ describe('bannerContent', () => {
   })
 })
 
+describe('bannerContent: wingman', () => {
+  const wingman = (status: PlaneResult['status'], points: number) => ({ name: 'P', result: { ...result(status, points), lesson: 'p' } })
+
+  it('appends the wingman score to Mission complete', () => {
+    expect(bannerContent('ended', result('finished', 74.2, 8, 10), undefined, wingman('finished', 61))).toEqual({
+      title: 'Mission complete',
+      body: '74.2 points, 8 of 10 rings. Wingman P: 61.0 points.',
+    })
+  })
+
+  it('says when the wingman crashed', () => {
+    expect(bannerContent('ended', result('finished', 74.2, 8, 10), undefined, wingman('crashed', 12.25))?.body).toBe(
+      '74.2 points, 8 of 10 rings. Wingman P crashed with 12.3 points.',
+    )
+  })
+
+  it('changes nothing else in the banner', () => {
+    const w = wingman('finished', 61)
+    expect(bannerContent('ended', result('crashed', 12, 2), undefined, w)).toEqual(bannerContent('ended', result('crashed', 12, 2)))
+    expect(bannerContent('ready', undefined, undefined, w)).toEqual(bannerContent('ready', undefined))
+    expect(bannerContent('paused', result('flying'), undefined, w)).toEqual(bannerContent('paused', result('flying')))
+    expect(bannerContent('running', result('flying'), undefined, w)).toBeUndefined()
+  })
+})
+
 describe('banner end to end', () => {
   it('gives PID on course 101 the same Mission complete text at x1 and x4', () => {
     const a = createFlight(runWith(pid))

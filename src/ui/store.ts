@@ -6,7 +6,7 @@ import type { AlgorithmModule, Params } from '../algorithms/index.ts'
 import type { Conditions, FlightMode } from '../sim/types.ts'
 import { clampCondition } from './conditions.ts'
 import { clampValue } from './params.ts'
-import { loadSettings, saveSettings, validCourse, type Settings, type StorageGetter } from './persistence.ts'
+import { loadSettings, saveSettings, validCourse, validWingman, type Settings, type StorageGetter } from './persistence.ts'
 
 export type Phase = 'ready' | 'running' | 'paused' | 'ended'
 
@@ -45,6 +45,10 @@ export interface Store extends PhaseOwner {
   readonly conditions: Conditions
   /** Sets condition `key`, clamped and snapped; an unknown key or a non-finite value is ignored. */
   setCondition(key: string, value: number): void
+  /** The lesson flown as the wingman, or null for none. */
+  readonly wingman: string | null
+  /** Sets the wingman; an id that is not a registered lesson offering Autopilot is ignored. */
+  setWingman(id: string | null): void
 }
 
 /** A lesson's mode until the player picks another: Autopilot when it has one, else its first mode. */
@@ -127,6 +131,14 @@ export function createStore(
       const clamped = clampCondition(key, value)
       if (clamped === undefined || settings.conditions[key as keyof Conditions] === clamped) return
       update({ conditions: { ...settings.conditions, [key]: clamped } })
+    },
+    get wingman() {
+      return settings.wingman
+    },
+    setWingman(id) {
+      if (id !== null && !validWingman(id, modules)) return
+      if (id === settings.wingman) return
+      update({ wingman: id })
     },
   }
 }
