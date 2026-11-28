@@ -7,7 +7,7 @@ import { CALM, createRun } from '../sim/run.ts'
 import type { TraceBuffer } from '../sim/trace.ts'
 import type { PlaneSnapshot, RingResult, Snapshot, Trace } from '../sim/types.ts'
 import { fixtureSnapshot } from './fixture.ts'
-import { FONT, LINE, PLANE_AT, SPRITE_PIXEL, altitudeY, sceneGeometry, scoreLabel, type SceneSize } from './scene-geometry.ts'
+import { FONT, LINE, PLANE_ASPECT, PLANE_AT, PLANE_TO_RING, altitudeY, sceneGeometry, scoreLabel, type SceneSize } from './scene-geometry.ts'
 
 const SIZE: SceneSize = { width: 1280, height: 720, dpr: 1 }
 const course = makeCourse(101)
@@ -139,11 +139,15 @@ describe('sceneGeometry: mid-flight', () => {
     expect(scoreLabel(scored)).toBe('12.3 points')
   })
 
-  it('keeps sprite pixels at the 3 px floor, which a small scene needs', () => {
-    expect(SPRITE_PIXEL).toBeGreaterThanOrEqual(3)
-    const small = sceneGeometry(snapshotWith(plane({})), { width: 584, height: 327, dpr: 1 }).plane.length
-    expect(Math.round(small / 26)).toBeGreaterThanOrEqual(1)
-    expect(Math.round(small / 26)).toBeLessThan(SPRITE_PIXEL)
+  it.each([
+    [1280, 720],
+    [584, 327],
+    [343, 257],
+    [828, 230],
+  ])('sizes the plane to the rings at %i×%i, so it looks the same against them on any screen', (width, height) => {
+    const g = sceneGeometry(snapshotWith(plane({ x: course.rings[0].x })), { width, height, dpr: 2 })
+    const ring = g.rings.find((r) => r.index === 0)!
+    expect(g.plane.length / PLANE_ASPECT).toBeCloseTo(2 * ring.ry * PLANE_TO_RING, 9)
   })
 
   it('tilts the plane nose-up when climbing', () => {

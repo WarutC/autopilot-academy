@@ -52,6 +52,7 @@ export interface PlaneShape {
   readonly x: number
   readonly y: number
   readonly angle: number
+  /** Width of the sprite, CSS px; its height is `length / PLANE_ASPECT`. */
   readonly length: number
 }
 
@@ -91,8 +92,18 @@ export const FONT = {
   scoreLabel: 18,
 } as const
 
-/** Smallest side of one sprite pixel, CSS px. */
+/** Side of one mascot sprite pixel, CSS px; the plane sprite scales with the rings instead. */
 export const SPRITE_PIXEL = 3
+
+/** The plane sprite's width over its height: 26 by 15 sprite pixels. */
+export const PLANE_ASPECT = 26 / 15
+
+/**
+ * The plane's height as a share of a ring's outer height. The plane scales
+ * with the altitude scale, like the rings, so a phone shows the same plane in
+ * the same ring as a desktop does, and what looks like a pass is one.
+ */
+export const PLANE_TO_RING = 0.8
 
 /** Target line dash pattern, CSS px. */
 export const TARGET_DASH: readonly number[] = [10, 7]
@@ -174,7 +185,8 @@ export function sceneGeometry(snapshot: Snapshot, size: SceneSize): SceneGeometr
   const course = courseFromRings(snapshot.course, snapshot.rings)
 
   const planeX = X(px)
-  const length = Math.max(46, H * 0.13)
+  const ry = PLANT.ringR * ky
+  const length = 2 * ry * PLANE_TO_RING * PLANE_ASPECT
   const planeShape = (x: number, h: number, v: number): PlaneShape => ({
     x: X(x),
     y: Y(h),
@@ -183,7 +195,6 @@ export function sceneGeometry(snapshot: Snapshot, size: SceneSize): SceneGeometr
   })
   const wingmanX = wingman ? X(wingman.x) : undefined
 
-  const ry = PLANT.ringR * ky
   const rx = ry * 0.32
   const ringWidth = Math.max(LINE.ringMin, ry * 0.2)
   // Cull a ring only once it is fully off screen, however tall the scene.

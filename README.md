@@ -18,6 +18,111 @@ npm run typecheck  # tsc --noEmit
 npm run build      # production build in dist/
 ```
 
+## The plant model
+
+Every algorithm flies the same plant, defined in `src/sim/plant.ts`. If you
+want to design a controller offline (in MATLAB, Python or on paper), this is
+the model to design against.
+
+### Continuous-time dynamics
+
+The plane flies at a constant forward speed, so only its altitude is
+controlled. The state is the altitude `h` (m) and the climb rate `v` (m/s);
+the input is the elevator command `u`, clipped to [-1, 1]:
+
+```math
+\begin{aligned}
+\dot h &= v \\
+\dot v &= -a\,v + b\,u + d \\
+\dot x &= V
+\end{aligned}
+```
+
+| Symbol | Meaning | Value |
+| --- | --- | --- |
+| `a` | climb-rate damping | 0.5 1/s |
+| `b` | elevator gain | 20 m/s² per unit of `u` |
+| `V` | forward speed | 20 m/s |
+| `d` | disturbance acceleration (see below) | 0 in calm air |
+| `h(0)`, `v(0)` | initial altitude and climb rate | 50 m, 0 m/s |
+
+In state-space form, with `x = [h, v]ᵀ` and the altitude as the output:
+
+```math
+A = \begin{bmatrix} 0 & 1 \\ 0 & -a \end{bmatrix},\quad
+B = \begin{bmatrix} 0 \\ b \end{bmatrix},\quad
+C = \begin{bmatrix} 1 & 0 \end{bmatrix}
+```
+
+From the elevator to the altitude it is an integrator in series with a first-order lag:
+
+```math
+G(s) = \frac{H(s)}{U(s)} = \frac{b}{s\,(s + a)} = \frac{20}{s\,(s + 0.5)}
+```
+
+The open-loop poles are at `s = 0` and `s = -0.5`. Full up elevator
+(`u = 1`) settles at a climb rate of `b/a = 40 m/s`.
+With a state feedback `u = -k_h·h - k_v·v` (plus a reference term), the closed loop has the characteristic polynomial
+`s² + (a + b·k_v)·s + b·k_h`. The built-in Pole Placement, LQR and PID
+lessons all start from this.
+
+### Sampling and the simulation step
+
+- The controller runs every `Tc = 0.02 s` (50 Hz). Its output is held
+  constant until the next tick (zero-order hold).
+- The physics steps every `dt = 0.005 s`, four steps per control tick,
+  with semi-implicit Euler: `v` is updated first, then `h` with the new `v`.
+- For a discrete-time design at `Tc`, the Kalman filter in `src/sim/kalman.ts`
+  uses the Euler model
+  `A_d = [[1, Tc], [0, 1 - a·Tc]]`, `B_d = [0, b·Tc]ᵀ`. For an exact
+  zero-order-hold discretization, apply `c2d` to `(A, B)` with `Tc`.
+
+### What the controller sees
+
+`compute(ctx)` gets the altitude reference `ref`, the measured altitude
+`h` and a climb rate `v`, not the true state:
+
+- With the altimeter noise at σ = 0 (the default), `h` is the true altitude.
+- With noise, the altimeter reads `y = h + σ·n`, where `n ~ N(0, 1)` is drawn
+  fresh each step.
+- With the Kalman filter off, `ctx.h = y` and `ctx.v` is the finite difference
+  `(y − y_prev) / Tc`, which is 0 on the first tick. Noise in `y` therefore
+  shows up amplified in `ctx.v`.
+- With the Kalman filter on, `ctx.h` and `ctx.v` are the filter's estimates.
+  It uses the model above, white-acceleration process noise of intensity `Q`
+  and a measurement variance `R` (the Q and R sliders).
+
+### Disturbances
+
+The Flight conditions card sets the disturbance acceleration `d`:
+
+```math
+d(t) = -d_{\text{down}} + \sigma_g\, g(t), \qquad
+dg = -g\,dt + \sqrt{2}\, dW
+```
+
+`d_down` is the steady downdraft and `σ_g` the gust strength (rms, m/s²).
+`g(t)` is an Ornstein–Uhlenbeck process with unit variance and a 1 s
+correlation time. It is seeded from the course number, so a course always
+has the same gusts. A steady downdraft is a constant input disturbance, and
+only a controller with integral action removes the error it causes.
+
+### The course and the score
+
+- The reference `ref(x)` is piecewise constant, a series of steps. It starts
+  at 50 m and switches to each ring's altitude halfway between rings (80 m
+  before the first ring). `ctx.refAhead(τ)` returns the reference
+  `V·τ` meters ahead, for predictive controllers such as MPC.
+- There are 10 rings, 160 m apart starting at `x = 200 m` (one every 8 s),
+  each 22–88 m high and 10–45 m above or below the previous one. The course
+  ends 100 m after the last ring.
+- A ring is passed when `|h − h_ring| ≤ 7 m` as the plane crosses it. It
+  scores `4 + 6·(1 − err/7)` points: 10 at the center, 4 at the rim, 0 when
+  missed.
+- Leaving the safe band 6 m ≤ `h` ≤ 110 m is a crash and ends the flight.
+- The logbook also records the IAE, `∫|ref − h| dt`, and the control energy,
+  `∫u² dt`, so you can compare tracking against effort.
+
 ## Add an algorithm
 
 An algorithm is one TypeScript file in `src/algorithms/`. The app finds every

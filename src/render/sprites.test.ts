@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { SPRITE_PIXEL } from './scene-geometry.ts'
 import {
+  PLANE_PIXEL_MIN,
   PLANE_FRAMES,
   PLANE_PAD,
   PLANE_ROWS,
@@ -135,10 +135,15 @@ describe('propellerOn and spritePixel', () => {
     expect(propellerOn(1 / 24, true)).toBe(true)
   })
 
-  it('never goes below the sprite pixel floor', () => {
-    expect(spritePixel(46)).toBe(SPRITE_PIXEL)
-    expect(spritePixel(0.13 * 831)).toBe(4)
-    expect(spritePixel(Number.NaN)).toBe(SPRITE_PIXEL)
+  it('rounds to whole device pixels and never goes below the plane pixel floor', () => {
+    expect(spritePixel(78)).toBe(3)
+    expect(spritePixel(53)).toBe(2)
+    expect(spritePixel(10)).toBe(2)
+    expect(spritePixel(10, 2)).toBe(PLANE_PIXEL_MIN)
+    expect(spritePixel(10, 3)).toBe(5 / 3)
+    expect(spritePixel(43.5, 3)).toBe(5 / 3)
+    expect(spritePixel(Number.NaN)).toBe(2)
+    expect(spritePixel(Number.NaN, 2)).toBe(PLANE_PIXEL_MIN)
   })
 })
 

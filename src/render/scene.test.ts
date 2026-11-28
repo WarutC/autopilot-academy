@@ -4,8 +4,8 @@ import { fixtureSnapshot } from './fixture.ts'
 import { contrast } from '../styles/css-test-helpers.ts'
 import { SCENE, WINGMAN_TRAIL, drawBackdrop, draw } from './scene.ts'
 import { TIMES, sceneryFor } from './scenery.ts'
-import { PLANE_AT, SPRITE_PIXEL, TARGET_DASH } from './scene-geometry.ts'
-import { PLAYER_PALETTE, WINGMAN_PALETTE } from './sprites.ts'
+import { PLANE_AT, TARGET_DASH } from './scene-geometry.ts'
+import { PLANE_PIXEL_MIN, PLAYER_PALETTE, WINGMAN_PALETTE } from './sprites.ts'
 import type { Snapshot } from '../sim/types.ts'
 
 const SAMPLE_COURSES = [101, 7, 8, 14] as const
@@ -205,9 +205,11 @@ describe('draw', () => {
       draw(ctx, withWingman(), LIGHT, { width, height, dpr })
       const sprite = spriteRects(calls, rects)
       expect(sprite.length).toBeGreaterThan(0)
-      const px = sprite[0]![3]!
-      expect(px).toBeGreaterThanOrEqual(SPRITE_PIXEL)
-      for (const args of sprite) {
+      // In device pixels: every edge on a whole pixel, every sprite pixel one size.
+      const device = sprite.map((args) => args.map((v) => Math.round(v * dpr * 1e6) / 1e6))
+      const px = device[0]![3]!
+      expect(px / dpr).toBeGreaterThanOrEqual(PLANE_PIXEL_MIN)
+      for (const args of device) {
         for (const v of args) expect(Number.isInteger(v)).toBe(true)
         expect(args[3]).toBe(px)
         expect(args[2]! % px).toBe(0)
