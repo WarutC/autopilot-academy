@@ -7,7 +7,7 @@ import { CALM, createRun } from '../sim/run.ts'
 import type { TraceBuffer } from '../sim/trace.ts'
 import type { PlaneSnapshot, RingResult, Snapshot, Trace } from '../sim/types.ts'
 import { fixtureSnapshot } from './fixture.ts'
-import { FONT, LINE, PLANE_ASPECT, PLANE_AT, PLANE_TO_RING, altitudeY, sceneGeometry, scoreLabel, type SceneSize } from './scene-geometry.ts'
+import { FONT, LINE, PLANE_ASPECT, PLANE_AT, PLANE_TO_RING, altitudeY, conditionsParts, sceneGeometry, scoreLabel, type SceneSize } from './scene-geometry.ts'
 
 const SIZE: SceneSize = { width: 1280, height: 720, dpr: 1 }
 const course = makeCourse(101)
@@ -411,5 +411,28 @@ describe('sceneGeometry: wingman', () => {
     const ring0 = g.rings.find((r) => r.index === 0)
     expect(ring0).toBeDefined()
     expect(ring0!.state).toBe('pass')
+  })
+})
+
+describe('conditionsParts', () => {
+  it('is undefined in calm air with a perfect altimeter, and for the Kalman filter alone', () => {
+    expect(conditionsParts(CALM)).toBeUndefined()
+    expect(conditionsParts(undefined)).toBeUndefined()
+    expect(conditionsParts({ ...CALM, kalman: 1, kq: 50 })).toBeUndefined()
+  })
+
+  it('lists gusts, downdraft and noise, with the Kalman filter only beside noise', () => {
+    expect(conditionsParts({ ...CALM, gusts: 10 })).toEqual(['Gusts 10 m/s²'])
+    expect(conditionsParts({ ...CALM, down: 2.5 })).toEqual(['Downdraft 2.5 m/s²'])
+    expect(conditionsParts({ ...CALM, noise: 1.2 })).toEqual(['Noise 1.2 m'])
+    expect(conditionsParts({ ...CALM, gusts: 10, down: 2, noise: 3, kalman: 1 })).toEqual(['Gusts 10 m/s²', 'Downdraft 2 m/s²', 'Noise 3 m + Kalman'])
+  })
+
+  it('adds HUD parts only when the conditions are not calm, and changes nothing else', () => {
+    const calm = sceneGeometry(snapshotWith(plane({ x: 300 })), SIZE)
+    expect('conditions' in calm.hud).toBe(false)
+    const gusty = sceneGeometry({ ...snapshotWith(plane({ x: 300 })), conditions: { ...CALM, gusts: 10 } }, SIZE)
+    expect(gusty.hud.conditions).toEqual(['Gusts 10 m/s²'])
+    expect({ ...gusty, hud: { ring: gusty.hud.ring, altitude: gusty.hud.altitude } }).toEqual(calm)
   })
 })

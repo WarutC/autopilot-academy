@@ -82,9 +82,23 @@ function drawTrail(ctx: CanvasRenderingContext2D, trail: readonly Point[], color
   ctx.stroke()
 }
 
-function drawHud(ctx: CanvasRenderingContext2D, lines: readonly string[], theme: Theme): void {
+/** `parts` joined with ` · ` into as few lines as fit `maxWidth` at the current font; a part never splits. */
+export function packLines(ctx: Pick<CanvasRenderingContext2D, 'measureText'>, parts: readonly string[], maxWidth: number): string[] {
+  const lines: string[] = []
+  for (const part of parts) {
+    const last = lines.length - 1
+    const joined = last >= 0 ? `${lines[last]} · ${part}` : part
+    if (last >= 0 && ctx.measureText(joined).width <= maxWidth) lines[last] = joined
+    else lines.push(part)
+  }
+  return lines
+}
+
+/** The HUD `lines`, then the condition `parts` packed to `maxWidth`. */
+function drawHud(ctx: CanvasRenderingContext2D, lines: readonly string[], parts: readonly string[], maxWidth: number, theme: Theme): void {
   ctx.save()
   ctx.font = `700 ${FONT.hud}px ${theme.fontCondensed}`
+  lines = [...lines, ...packLines(ctx, parts, maxWidth)]
   ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
   ctx.fillStyle = SCENE.hudText
@@ -385,7 +399,8 @@ export function draw(ctx: CanvasRenderingContext2D, snapshot: Snapshot, theme: T
 
   for (const ring of g.rings) if (ring.front) drawRing(ctx, ring, true)
 
-  drawHud(ctx, g.hud.wingman === undefined ? [g.hud.ring, g.hud.altitude] : [g.hud.ring, g.hud.altitude, g.hud.wingman], theme)
+  const hud = g.hud.wingman === undefined ? [g.hud.ring, g.hud.altitude] : [g.hud.ring, g.hud.altitude, g.hud.wingman]
+  drawHud(ctx, hud, g.hud.conditions ?? [], g.width - 2 * INSET, theme)
 
   const { badge } = g
   if (badge.r > 0) {

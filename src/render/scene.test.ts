@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { LIGHT } from '../ui/theme.ts'
 import { fixtureSnapshot } from './fixture.ts'
 import { contrast } from '../styles/css-test-helpers.ts'
-import { SCENE, WINGMAN_TRAIL, drawBackdrop, draw } from './scene.ts'
+import { SCENE, WINGMAN_TRAIL, drawBackdrop, draw, packLines } from './scene.ts'
 import { TIMES, sceneryFor } from './scenery.ts'
 import { PLANE_AT, TARGET_DASH } from './scene-geometry.ts'
 import { PLANE_PIXEL_MIN, PLAYER_PALETTE, WINGMAN_PALETTE } from './sprites.ts'
@@ -183,6 +183,26 @@ describe('draw', () => {
   it('outlines both plane sprites in the scene outline color', () => {
     expect(PLAYER_PALETTE.K).toBe(SCENE.outline)
     expect(WINGMAN_PALETTE.K).toBe(SCENE.outline)
+  })
+
+  it('draws one more HUD line when the conditions are not calm', () => {
+    const texts = (snapshot: Snapshot) => {
+      const { ctx, calls } = recordingContext()
+      draw(ctx, snapshot, LIGHT, { width: 1280, height: 720, dpr: 1 })
+      return calls.filter((c) => c === 'fillText').length
+    }
+    const calm = fixtureSnapshot()
+    expect(texts({ ...calm, conditions: { ...calm.conditions, gusts: 10 } })).toBe(texts(calm) + 1)
+  })
+
+  it('packs condition parts into as few lines as fit, never splitting a part', () => {
+    // 10 px per character.
+    const ctx = { measureText: (text: string) => ({ width: text.length * 10 }) as TextMetrics }
+    const parts = ['Gusts 10 m/s²', 'Downdraft 2 m/s²', 'Noise 1.5 m + Kalman']
+    expect(packLines(ctx, parts, 1000)).toEqual(['Gusts 10 m/s² · Downdraft 2 m/s² · Noise 1.5 m + Kalman'])
+    expect(packLines(ctx, parts, 320)).toEqual(['Gusts 10 m/s² · Downdraft 2 m/s²', 'Noise 1.5 m + Kalman'])
+    expect(packLines(ctx, parts, 50)).toEqual(parts)
+    expect(packLines(ctx, [], 300)).toEqual([])
   })
 
   it('scopes the sprite smoothing setting inside save and restore', () => {
