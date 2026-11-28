@@ -546,6 +546,8 @@ body {
 
 .stick-btn {
   box-sizing: border-box;
+  display: grid;
+  place-items: center;
   width: 64px;
   height: 64px;
   margin: 0;
@@ -569,16 +571,40 @@ body {
 }
 
 /*
- * The setpoint slider over the scene's right edge, in Semi-auto. Its track
- * runs from 10.85% down to 13.87% up the scene, the 103 m to 13 m span of
- * its altitude scale, so the plane thumb sits near the dashed target line
- * (a native thumb stops half its size short of each end). It stays left of
- * the score badge column (16 px inset + 92 px badge + 16 px gap).
+ * The arrow: a triangle in the text color. A triangle's box looks low (▲) or
+ * high (▼) when centered, so each is nudged a sixth of its height toward its
+ * point, which puts its centroid on the circle's center.
+ */
+.stick-icon {
+  display: block;
+  width: 24px;
+  height: 20px;
+  background: currentColor;
+  pointer-events: none;
+}
+
+.stick-climb .stick-icon {
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  transform: translateY(-3px);
+}
+
+.stick-dive .stick-icon {
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  transform: translateY(3px);
+}
+
+/*
+ * The setpoint slider over the scene's right edge, in Semi-auto. A native
+ * thumb stops half its size (13.5 px) short of each end, so the track reaches
+ * that far past the 103 m and 13 m lines of the scene's altitude scale
+ * (y = 0.97·H − h·0.92·H/110 inside the 2 px border, H = stage height − 4 px).
+ * The plane thumb then sits on the dashed target line at any scene height.
+ * It stays left of the score badge column (16 px inset + 92 px badge + 16 px gap).
  */
 .setpoint {
   position: absolute;
-  top: 10.85%;
-  bottom: 13.87%;
+  top: calc(10.8545% - 11.93px);
+  bottom: calc(13.8727% - 12.05px);
   right: 124px;
   display: flex;
   justify-content: center;

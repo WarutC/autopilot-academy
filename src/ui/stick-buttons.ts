@@ -9,9 +9,9 @@ export interface StickButtons {
   setVisible(visible: boolean): void
 }
 
-const BUTTONS: ReadonlyArray<{ direction: StickDirection; glyph: string; label: string }> = [
-  { direction: 'climb', glyph: '▲', label: 'Climb' },
-  { direction: 'dive', glyph: '▼', label: 'Dive' },
+const BUTTONS: ReadonlyArray<{ direction: StickDirection; label: string }> = [
+  { direction: 'climb', label: 'Climb' },
+  { direction: 'dive', label: 'Dive' },
 ]
 
 export function createStickButtons(doc: Document, stick: Stick): StickButtons {
@@ -22,14 +22,18 @@ export function createStickButtons(doc: Document, stick: Stick): StickButtons {
 
   const releases: Array<() => void> = []
 
-  for (const { direction, glyph, label } of BUTTONS) {
+  for (const { direction, label } of BUTTONS) {
     const source = `pointer:${direction}`
     const b = doc.createElement('button')
     b.type = 'button'
     b.className = `stick-btn stick-${direction}`
     b.setAttribute('aria-label', label)
     b.setAttribute('aria-pressed', 'false')
-    b.textContent = glyph
+    // The arrow is a CSS triangle, not a ▲ or ▼ glyph: font metrics put a glyph off center in the circle.
+    const icon = doc.createElement('span')
+    icon.className = 'stick-icon'
+    icon.setAttribute('aria-hidden', 'true')
+    b.append(icon)
 
     const hold = (held: boolean) => {
       b.setAttribute('aria-pressed', String(held))

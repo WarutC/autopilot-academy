@@ -75,7 +75,12 @@ describe('createStickButtons', () => {
   it('builds ▲ Climb and ▼ Dive as native buttons with accessible names', () => {
     const { climb, dive } = setup()
     expect([climb.type, dive.type]).toEqual(['button', 'button'])
-    expect([climb.textContent, dive.textContent]).toEqual(['▲', '▼'])
+    expect([climb.className, dive.className]).toEqual(['stick-btn stick-climb', 'stick-btn stick-dive'])
+    // The arrow is a decorative icon; the label alone names the button.
+    for (const b of [climb, dive]) {
+      expect(b.textContent).toBe('')
+      expect(b.children.map((c) => [c.className, c.getAttribute('aria-hidden')])).toEqual([['stick-icon', 'true']])
+    }
     expect([climb.getAttribute('aria-label'), dive.getAttribute('aria-label')]).toEqual(['Climb', 'Dive'])
     expect(climb.getAttribute('aria-pressed')).toBe('false')
   })

@@ -3,7 +3,7 @@
 // never rotated or smoothly scaled. Pure data and `fillRect` calls only: no
 // offscreen canvas, so the painter runs against any recording context.
 
-import { SPRITE_PIXEL, type PlaneShape } from './scene-geometry.ts'
+import type { PlaneShape } from './scene-geometry.ts'
 
 /** Equal-length rows of palette keys; `.` is transparent. */
 export type SpriteGrid = readonly string[]
@@ -108,9 +108,19 @@ export function propellerOn(t: number, reducedMotion: boolean): boolean {
   return Math.floor(t * PROPELLER_RATE) % 2 === 0
 }
 
-/** CSS px per sprite pixel for a plane `length` px long, never below `SPRITE_PIXEL`. */
-export function spritePixel(length: number): number {
-  return Number.isFinite(length) ? Math.max(SPRITE_PIXEL, Math.round(length / PLANE_WIDTH)) : SPRITE_PIXEL
+/** Smallest side of one plane sprite pixel, CSS px: on a phone the plane shrinks with the rings. */
+export const PLANE_PIXEL_MIN = 1.5
+
+/**
+ * CSS px per sprite pixel for a plane `length` px long at `dpr`: a whole
+ * number of device pixels, so every sprite pixel is the same size, and never
+ * below `PLANE_PIXEL_MIN`.
+ */
+export function spritePixel(length: number, dpr = 1): number {
+  const ratio = dpr > 0 && Number.isFinite(dpr) ? dpr : 1
+  const floor = Math.ceil(PLANE_PIXEL_MIN * ratio)
+  const device = Number.isFinite(length) ? Math.round((length / PLANE_WIDTH) * ratio) : floor
+  return Math.max(floor, device) / ratio
 }
 
 /** One horizontal run of one opaque key in a grid row, columns `x` to `end` (exclusive). */
@@ -179,7 +189,7 @@ export function drawPlaneSprite(
   dpr = 1,
 ): void {
   if (!(Number.isFinite(plane.x) && Number.isFinite(plane.y))) return
-  const px = spritePixel(plane.length)
+  const px = spritePixel(plane.length, dpr)
   const frame = PLANE_FRAMES[frameFor(plane.angle)]!
   const left = Math.round(plane.x - 0.55 * PLANE_WIDTH * px)
   const top = Math.round(plane.y - (frame.length / 2) * px)
