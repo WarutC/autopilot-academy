@@ -1,4 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#ea580c"/>
-  <text x="32" y="32" dy="0.35em" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, sans-serif" font-size="26" font-weight="600" fill="#ffffff">AA</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -4 18 18" shape-rendering="crispEdges">
+  <path fill="#1A2A3A" d="M12 0h6v1h-6zM12 1h1v1h-1zM14 1h2v1h-2zM17 1h1v1h-1zM4 2h7v1h-7zM12 2h2v1h-2zM16 2h2v1h-2zM2 3h3v1h-3zM10 3h4v1h-4zM15 3h2v1h-2zM1 4h2v1h-2zM12 4h2v1h-2zM15 4h1v1h-1zM0 5h2v1h-2zM3 5h1v1h-1zM15 5h1v1h-1zM0 6h1v1h-1zM14 6h2v1h-2zM0 7h1v1h-1zM13 7h2v1h-2zM0 8h2v1h-2zM11 8h3v1h-3zM1 9h11v1h-11z"/>
+  <path fill="#8FE3F0" d="M13 1h1v1h-1zM16 1h1v1h-1zM14 2h2v1h-2zM5 3h5v1h-5zM14 3h1v1h-1zM3 4h9v1h-9zM14 4h1v1h-1zM2 5h1v1h-1zM4 5h11v1h-11zM1 6h13v1h-13zM1 7h1v1h-1zM8 7h5v1h-5zM10 8h1v1h-1z"/>
+  <path fill="#FFFFFF" d="M2 7h6v1h-6zM2 8h8v1h-8z"/>
 </svg>
