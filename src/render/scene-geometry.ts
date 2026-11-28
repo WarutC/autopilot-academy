@@ -3,7 +3,7 @@
 
 import { courseFromRings, refAt } from '../sim/course.ts'
 import { PLANT } from '../sim/plant.ts'
-import type { PlaneSnapshot, Snapshot, Trace } from '../sim/types.ts'
+import type { Conditions, PlaneSnapshot, Snapshot, Trace } from '../sim/types.ts'
 
 /** Canvas size in CSS pixels, and the device pixels per CSS pixel. */
 export interface SceneSize {
@@ -68,8 +68,12 @@ export interface SceneGeometry {
   readonly plane: PlaneShape
   /** The wingman's plane and trail, only when the snapshot has a wingman. */
   readonly wingman?: { readonly plane: PlaneShape; readonly trail: readonly Point[] }
-  /** `wingman` is the wingman's score line, only when the snapshot has a wingman. */
-  readonly hud: { readonly ring: string; readonly altitude: string; readonly wingman?: string }
+  /**
+   * `wingman` is the wingman's score line, only when the snapshot has a wingman;
+   * `conditions` lists the flight conditions, only when they are not calm;
+   * the renderer packs them into lines that fit the scene.
+   */
+  readonly hud: { readonly ring: string; readonly altitude: string; readonly wingman?: string; readonly conditions?: readonly string[] }
   readonly score: string
   readonly badge: Badge
 }
@@ -158,6 +162,25 @@ export function altitudeY(height: number, h: number): number {
   return height * 0.97 - h * altitudeScale(height)
 }
 
+/** A number without a trailing `.0`, such as `2` or `2.5`. */
+function short(value: number): string {
+  return String(Math.round(value * 10) / 10)
+}
+
+/**
+ * The flight conditions as short HUD parts, such as `Gusts 10 m/s²`, or
+ * undefined in calm air with a perfect altimeter. The Kalman filter shows
+ * only with noise, since it changes nothing without it.
+ */
+export function conditionsParts(conditions: Readonly<Conditions> | undefined): readonly string[] | undefined {
+  if (!conditions) return undefined
+  const parts: string[] = []
+  if (conditions.gusts > 0) parts.push(`Gusts ${short(conditions.gusts)} m/s²`)
+  if (conditions.down > 0) parts.push(`Downdraft ${short(conditions.down)} m/s²`)
+  if (conditions.noise > 0) parts.push(`Noise ${short(conditions.noise)} m${conditions.kalman ? ' + Kalman' : ''}`)
+  return parts.length > 0 ? parts : undefined
+}
+
 export function scoreText(snapshot: Snapshot): string {
   return (playerOf(snapshot)?.points ?? 0).toFixed(1)
 }
@@ -238,6 +261,7 @@ export function sceneGeometry(snapshot: Snapshot, size: SceneSize): SceneGeometr
   const r = Math.min(BADGE_RADIUS, Math.max(0, Math.min(W, H) / 2 - INSET))
 
   const wingmanShape = wingman ? planeShape(wingman.x, wingman.h, wingman.v) : undefined
+  const conditions = conditionsParts(snapshot.conditions)
 
   return {
     width: W,
@@ -255,6 +279,7 @@ export function sceneGeometry(snapshot: Snapshot, size: SceneSize): SceneGeometr
       ring: `Ring ${Math.min(results.length + 1, nRings)} / ${nRings}`,
       altitude: `Altitude ${ph.toFixed(0)} m, target ${ref.toFixed(0)} m`,
       ...(wingman ? { wingman: `Wingman ${wingman.points.toFixed(1)}` } : {}),
+      ...(conditions ? { conditions } : {}),
     },
     score: scoreText(snapshot),
     badge: { x: W - INSET - r, y: H - INSET - r, r },
